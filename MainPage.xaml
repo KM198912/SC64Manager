@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:NetGui.ViewModels"
+             xmlns:models="clr-namespace:NetGui.Models"
+             xmlns:conv="clr-namespace:NetGui.Converters"
+             x:Class="NetGui.MainPage"
+             BackgroundColor="#1a1a1a">
+
+    <ContentPage.Resources>
+        <ResourceDictionary>
+            <conv:InverseBoolConverter x:Key="InverseBoolConverter" />
+            <conv:ConnectionColorConverter x:Key="ConnectionColorConverter" />
+            <conv:NotParentDirConverter x:Key="NotParentDirConverter" />
+        </ResourceDictionary>
+    </ContentPage.Resources>
+
+    <Grid>
+        <!-- Main Application Layout -->
+        <Grid RowDefinitions="Auto, *, Auto" ColumnDefinitions="*, *" Padding="20" ColumnSpacing="20">
+
+            <!-- Header -->
+            <Border Grid.Row="0" Grid.ColumnSpan="2" BackgroundColor="#252525" StrokeShape="RoundRectangle 8" Padding="15" Margin="0,0,0,20">
+                <Grid ColumnDefinitions="*, Auto, Auto, Auto">
+                    <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
+                        <Label Text="SummerCart64 GUI Manager" FontSize="20" FontAttributes="Bold" TextColor="White" VerticalOptions="Center"/>
+                        <Border BackgroundColor="{Binding StatusColor}" StrokeShape="RoundRectangle 10" Padding="8,2" VerticalOptions="Center">
+                            <Label Text="{Binding StatusText}" FontSize="12" TextColor="Black" FontAttributes="Bold"/>
+                        </Border>
+                    </HorizontalStackLayout>
+
+                    <HorizontalStackLayout Grid.Column="1" Spacing="10" Margin="0,0,20,0" VerticalOptions="Center">
+                        <Label Text="COM Port:" VerticalOptions="Center" TextColor="#cccccc"/>
+                        <Picker ItemsSource="{Binding AvailablePorts}" 
+                                SelectedItem="{Binding SelectedPort}"
+                                WidthRequest="120"
+                                TextColor="White"
+                                BackgroundColor="#333333"/>
+                        <Button Text="🔄" Command="{Binding RefreshAvailablePortsCommand}" BackgroundColor="Transparent"/>
+                    </HorizontalStackLayout>
+
+                    <ActivityIndicator Grid.Column="2" IsRunning="{Binding IsBusy}" Color="#0078d4" WidthRequest="30" Margin="0,0,10,0"/>
+
+                    <Button Grid.Column="3" 
+                            Text="{Binding ConnectionButtonText}" 
+                            Command="{Binding ToggleConnectionCommand}"
+                            IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBoolConverter}}"
+                            BackgroundColor="{Binding IsConnected, Converter={StaticResource ConnectionColorConverter}}"
+                            TextColor="White" 
+                            FontAttributes="Bold" 
+                            WidthRequest="120" />
+                </Grid>
+            </Border>
+
+            <!-- Local Files -->
+            <Grid Grid.Row="1" Grid.Column="0" RowDefinitions="Auto, *">
+                <Label Grid.Row="0" Text="Local Workstation" FontSize="16" FontAttributes="Bold" TextColor="#0078d4" Margin="0,0,0,10"/>
+                <Border Grid.Row="1" BackgroundColor="#252525" StrokeShape="RoundRectangle 8">
+                    <CollectionView ItemsSource="{Binding LocalFiles}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:FileItem">
+                                <Grid ColumnDefinitions="30, *, Auto" Padding="10,5">
+                                    <Label Text="&#xED25;" FontFamily="Segoe MDL2 Assets" IsVisible="{Binding IsDirectory}" VerticalOptions="Center" TextColor="#FFD700"/>
+                                    <Label Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" IsVisible="{Binding IsDirectory, Converter={StaticResource InverseBoolConverter}}" VerticalOptions="Center" TextColor="#E0E0E0"/>
+                                    <Label Grid.Column="1" Text="{Binding Name}" TextColor="White" VerticalOptions="Center" Margin="5,0,0,0"/>
+                                    <Label Grid.Column="2" Text="{Binding SizeDisplay}" TextColor="#888888" VerticalOptions="Center" FontSize="12"/>
+                                </Grid>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </Border>
+            </Grid>
+
+            <!-- Remote Files -->
+            <Grid Grid.Row="1" Grid.Column="1" RowDefinitions="Auto, Auto, *">
+                <HorizontalStackLayout Grid.Row="0" Spacing="10" Margin="0,0,0,5">
+                    <Label Text="SummerCart64 SD" FontSize="16" FontAttributes="Bold" TextColor="#4caf50" VerticalOptions="Center"/>
+                    <Label Text="{Binding CurrentRemotePath}" TextColor="#888888" VerticalOptions="Center" FontSize="13"/>
+                </HorizontalStackLayout>
+                
+                <HorizontalStackLayout Grid.Row="1" Spacing="10" Margin="0,0,0,5">
+                    <Button Text="Upload" Command="{Binding UploadFileCommand}" 
+                            BackgroundColor="#0078d4" Padding="10,0" HeightRequest="30" FontSize="12"/>
+                    <Button Text="Delete Selected" Command="{Binding DeleteSelectedCommand}" 
+                            BackgroundColor="#f44336" Padding="10,0" HeightRequest="30" FontSize="12"/>
+                    <Button Text="Refresh" Command="{Binding RefreshRemoteFilesCommand}" 
+                            BackgroundColor="#00897b" TextColor="White" Padding="15,0" HeightRequest="30" FontSize="12"/>
+                </HorizontalStackLayout>
+
+                <Border Grid.Row="2" BackgroundColor="#252525" StrokeShape="RoundRectangle 8">
+                    <CollectionView ItemsSource="{Binding RemoteFiles}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:FileItem">
+                                <Grid ColumnDefinitions="40, 30, *, Auto, Auto" Padding="10,5">
+                                    <CheckBox IsChecked="{Binding IsSelected}" VerticalOptions="Center" 
+                                              IsVisible="{Binding Name, Converter={StaticResource NotParentDirConverter}}"/>
+                                    
+                                    <Label Grid.Column="1" Text="&#xED25;" FontFamily="Segoe MDL2 Assets" IsVisible="{Binding IsDirectory}" VerticalOptions="Center" TextColor="#FFD700">
+                                        <Label.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=NavigateRemoteCommand}" CommandParameter="{Binding .}"/>
+                                        </Label.GestureRecognizers>
+                                    </Label>
+                                    <Label Grid.Column="1" Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" IsVisible="{Binding IsDirectory, Converter={StaticResource InverseBoolConverter}}" VerticalOptions="Center" TextColor="#E0E0E0"/>
+                                    
+                                    <Label Grid.Column="2" Text="{Binding Name}" TextColor="White" VerticalOptions="Center" Margin="5,0,0,0">
+                                        <Label.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=NavigateRemoteCommand}" CommandParameter="{Binding .}"/>
+                                        </Label.GestureRecognizers>
+                                    </Label>
+
+                                    <Label Grid.Column="3" Text="{Binding SizeDisplay}" TextColor="#888888" VerticalOptions="Center" FontSize="12" Margin="0,0,10,0"/>
+
+                                    <Button Grid.Column="4" Text="&#xE118;" FontFamily="Segoe MDL2 Assets" 
+                                            IsVisible="{Binding IsDirectory, Converter={StaticResource InverseBoolConverter}}"
+                                            Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=DownloadFileCommand}"
+                                            CommandParameter="{Binding .}"
+                                            BackgroundColor="Transparent" BorderColor="#444444" BorderWidth="1"
+                                            Padding="0" WidthRequest="30" HeightRequest="25" FontSize="12" TextColor="White"/>
+                                </Grid>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </Border>
+            </Grid>
+
+            <!-- Status Log -->
+            <Border Grid.Row="2" Grid.ColumnSpan="2" BackgroundColor="#111111" StrokeThickness="1" Stroke="#333333" Margin="0,20,0,0" HeightRequest="120">
+                <ScrollView x:Name="LogScrollView">
+                    <Label Text="{Binding LogText}" TextColor="#00ff00" FontFamily="Consolas" FontSize="12" Padding="10"/>
+                </ScrollView>
+            </Border>
+        </Grid>
+
+        <!-- Fullscreen Progress Overlay -->
+        <Border IsVisible="{Binding IsBusy}" BackgroundColor="#CC000000" StrokeThickness="0">
+            <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center" Spacing="20">
+                <Border BackgroundColor="#2a2a2a" Padding="40" StrokeShape="RoundRectangle 12" StrokeThickness="1" Stroke="#444444">
+                    <VerticalStackLayout Spacing="15" WidthRequest="400">
+                        <Label Text="High-Speed Transfer in Progress" FontSize="18" FontAttributes="Bold" TextColor="White" HorizontalOptions="Center"/>
+                        <Label Text="{Binding StatusText}" FontSize="14" TextColor="#aaaaaa" HorizontalOptions="Center" Margin="0,0,0,10"/>
+                        
+                        <ProgressBar Progress="{Binding ProgressValue}" HeightRequest="12" ProgressColor="#0078d4" BackgroundColor="#1a1a1a"/>
+                        
+                        <Grid ColumnDefinitions="*, *">
+                            <Label Text="{Binding ProgressText}" FontSize="12" TextColor="#888888" HorizontalOptions="Start"/>
+                            <Label Grid.Column="1" Text="{Binding ProgressValue, StringFormat='{0:P0}'}" FontSize="12" TextColor="#0078d4" FontAttributes="Bold" HorizontalOptions="End"/>
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+        </Border>
+
+    </Grid>
+
+</ContentPage>

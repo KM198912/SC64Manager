@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<PriInfo>
+	<ResourceMap name="Microsoft.Maui.Controls" version="1.0" primary="true">
+		<Qualifiers/>
+		<ResourceMapSubtree name="Files">
+			<ResourceMapSubtree name="Microsoft.Maui.Controls">
+				<ResourceMapSubtree name="Compatibility">
+					<ResourceMapSubtree name="Handlers">
+						<ResourceMapSubtree name="ListView">
+							<ResourceMapSubtree name="Windows">
+								<NamedResource name="ListViewStyles.xbf" uri="ms-resource://Microsoft.Maui.Controls/Files/Microsoft.Maui.Controls/Compatibility/Handlers/ListView/Windows/ListViewStyles.xbf">
+									<Candidate type="EmbeddedData">
+										<Base64Value>[Embedded Binary Data]</Base64Value>
+									</Candidate>
+								</NamedResource>
+							</ResourceMapSubtree>
+						</ResourceMapSubtree>
+						<ResourceMapSubtree name="TableView">
+							<ResourceMapSubtree name="Windows">
+								<NamedResource name="TableViewStyles.xbf" uri="ms-resource://Microsoft.Maui.Controls/Files/Microsoft.Maui.Controls/Compatibility/Handlers/TableView/Windows/TableViewStyles.xbf">
+									<Candidate type="EmbeddedData">
+										<Base64Value>[Embedded Binary Data]</Base64Value>
+									</Candidate>
+								</NamedResource>
+							</ResourceMapSubtree>
+						</ResourceMapSubtree>
+					</ResourceMapSubtree>
+				</ResourceMapSubtree>
+				<ResourceMapSubtree name="Platform">
+					<ResourceMapSubtree name="Windows">
+						<ResourceMapSubtree name="CollectionView">
+							<NamedResource name="ItemsViewStyles.xbf" uri="ms-resource://Microsoft.Maui.Controls/Files/Microsoft.Maui.Controls/Platform/Windows/CollectionView/ItemsViewStyles.xbf">
+								<Candidate type="EmbeddedData">
+									<Base64Value>[Embedded Binary Data]</Base64Value>
+								</Candidate>
+							</NamedResource>
+						</ResourceMapSubtree>
+						<ResourceMapSubtree name="Styles">
+							<NamedResource name="MauiControlsPageControlStyle.xbf" uri="ms-resource://Microsoft.Maui.Controls/Files/Microsoft.Maui.Controls/Platform/Windows/Styles/MauiControlsPageControlStyle.xbf">
+								<Candidate type="EmbeddedData">
+									<Base64Value>[Embedded Binary Data]</Base64Value>
+								</Candidate>
+							</NamedResource>
+							<NamedResource name="RadioButtonControlStyle.xbf" uri="ms-resource://Microsoft.Maui.Controls/Files/Microsoft.Maui.Controls/Platform/Windows/Styles/RadioButtonControlStyle.xbf">
+								<Candidate type="EmbeddedData">
+									<Base64Value>[Embedded Binary Data]</Base64Value>
+								</Candidate>
+							</NamedResource>
+							<NamedResource name="Resources.xbf" uri="ms-resource://Microsoft.Maui.Controls/Files/Microsoft.Maui.Controls/Platform/Windows/Styles/Resources.xbf">
+								<Candidate type="EmbeddedData">
+									<Base64Value>[Embedded Binary Data]</Base64Value>
+								</Candidate>
+							</NamedResource>
+							<NamedResource name="ShellStyles.xbf" uri="ms-resource://Microsoft.Maui.Controls/Files/Microsoft.Maui.Controls/Platform/Windows/Styles/ShellStyles.xbf">
+								<Candidate type="EmbeddedData">
+									<Base64Value>[Embedded Binary Data]</Base64Value>
+								</Candidate>
+							</NamedResource>
+						</ResourceMapSubtree>
+						<ResourceMapSubtree name="TabbedPage">
+							<NamedResource name="TabbedPageStyle.xbf" uri="ms-resource://Microsoft.Maui.Controls/Files/Microsoft.Maui.Controls/Platform/Windows/TabbedPage/TabbedPageStyle.xbf">
+								<Candidate type="EmbeddedData">
+									<Base64Value>[Embedded Binary Data]</Base64Value>
+								</Candidate>
+							</NamedResource>
+						</ResourceMapSubtree>
+					</ResourceMapSubtree>
+				</ResourceMapSubtree>
+			</ResourceMapSubtree>
+		</ResourceMapSubtree>
+	</ResourceMap>
+</PriInfo>
