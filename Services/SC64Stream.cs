@@ -9,14 +9,13 @@ public class SC64Stream : Stream
     private long _length;
     private readonly uint _bufferAddr;
     private const int SectorSize = 512;
-    private const int MaxChunkSize = 124 * 1024; // 124KB to stay safe within SD alignment
+    private const int MaxChunkSize = 124 * 1024; // 124KB buffer for safe SDRAM alignment
     
-    // Caching for speed
     private byte[]? _cachedData;
     private uint _cachedSectorStart;
     private uint _cachedSectorCount;
 
-    public SC64Stream(SC64Device device, long length = 0, uint bufferAddr = 0x03FE0000)
+    public SC64Stream(SC64Device device, long length = 0, uint bufferAddr = 0x03F00000)
     {
         _device = device;
         _length = length;
@@ -55,11 +54,14 @@ public class SC64Stream : Stream
     public override int Read(byte[] buffer, int offset, int count)
     {
         int bytesRead = 0;
+        int maxSectors = MaxChunkSize / SectorSize;
+
         while (bytesRead < count)
         {
             uint sector = (uint)(_position / SectorSize);
             int offsetInSector = (int)(_position % SectorSize);
 
+            // 1. Check if the requested data is already in our burst cache
             if (_cachedData != null && sector >= _cachedSectorStart && sector < _cachedSectorStart + _cachedSectorCount)
             {
                 int cacheOffset = (int)((sector - _cachedSectorStart) * SectorSize + offsetInSector);
@@ -75,8 +77,10 @@ public class SC64Stream : Stream
                 }
             }
 
+            // 2. Cache miss: Fetch a new burst from the SD card
             int remaining = count - bytesRead;
-            uint secCountToFetch = (uint)Math.Max(256, Math.Min(remaining / SectorSize + 1, MaxChunkSize / SectorSize));
+            // Aim for at least 128 sectors (64KB) or whatever fits the buffer, but no more than 124KB
+            uint secCountToFetch = (uint)Math.Clamp(remaining / SectorSize + 1, 1, maxSectors);
             
             var data = _device.SdReadSectors(sector, secCountToFetch, _bufferAddr);
             if (data == null) break;
@@ -93,6 +97,8 @@ public class SC64Stream : Stream
         _cachedData = null; 
 
         int bytesWritten = 0;
+        int maxSectors = MaxChunkSize / SectorSize;
+
         while (bytesWritten < count)
         {
             uint sector = (uint)(_position / SectorSize);
@@ -101,8 +107,8 @@ public class SC64Stream : Stream
 
             if (offsetInSector == 0 && count - bytesWritten >= SectorSize)
             {
-                // Full sectors optimization: Chunk as many as possible
-                int sectorsToPack = Math.Min((count - bytesWritten) / SectorSize, MaxChunkSize / SectorSize);
+                // Full sectors: Pack as many as possible into a single burst
+                int sectorsToPack = Math.Min((count - bytesWritten) / SectorSize, maxSectors);
                 int sizeToPack = sectorsToPack * SectorSize;
                 
                 byte[] chunkData = new byte[sizeToPack];
@@ -118,7 +124,7 @@ public class SC64Stream : Stream
             }
             else
             {
-                // Partial sector (Read-Modify-Write)
+                // Partial sector: Read-Modify-Write
                 int toWrite = Math.Min(count - bytesWritten, remainingInSector);
                 byte[] sectorData = _device.SdReadSectors(sector, 1, _bufferAddr) ?? new byte[SectorSize];
                 Array.Copy(buffer, offset + bytesWritten, sectorData, offsetInSector, toWrite);

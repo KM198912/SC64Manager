@@ -8,137 +8,118 @@ namespace NetGui.Services;
 public class FsService
 {
     private readonly SC64Device _device;
+    private FatFileSystem? _fatFs;
     private SC64Stream? _stream;
-    private FatFileSystem? _fs;
 
-    public FsService(SC64Device device) => _device = device;
+    public FsService(SC64Device device)
+    {
+        _device = device;
+    }
 
-    public bool Mount(Action<string>? log = null)
+    public bool Mount(Action<string> log)
     {
         try
         {
-            log?.Invoke("Enabling ROM write access...");
-            _device.ExecuteCmd('C', 1, 1); // ROM_WRITE_ENABLE
-            
-            log?.Invoke("Power cycling SD interface...");
+            log("FS: Power cycling SD interface...");
             _device.SdDeinit();
-            Thread.Sleep(100);
+            Thread.Sleep(500);
 
-            log?.Invoke("Initializing SD Card...");
-            bool success = false;
-            uint resCode = 0;
-            
-            for (int i = 0; i < 3; i++) // 3 retries for slow cards
+            log("FS: Initializing SD Card...");
+            var (initSuccess, status) = _device.SdInit();
+            if (!initSuccess)
             {
-                (success, resCode) = _device.SdInit();
-                if (success) break;
-                Thread.Sleep(200);
-            }
-
-            if (!success)
-            {
-                string statusDesc = (resCode == 0) ? "No Card / Timeout" : $"Status Bits: {resCode:X8}";
-                log?.Invoke($"SD Init failed (Final Attempt). {statusDesc}");
+                log($"FS ERROR: SdInit failed with status 0x{status:X8}");
                 return false;
             }
 
-            // Create stream (using 128GB as dummy length for modern cards)
-            _stream = new SC64Stream(_device, 128L * 1024 * 1024 * 1024);
+            log("FS: Creating hardware stream (0x03F00000)...");
+            _stream = new SC64Stream(_device, 128L * 1024 * 1024 * 1024); // Use large bounds, DiscUtils will handle real bounds
             
-            log?.Invoke("Detecting partitions...");
+            log("FS: Scanning for BIOS/MBR partitions...");
             var partitionTable = new BiosPartitionTable(_stream);
-            var fatPartition = partitionTable.Partitions.FirstOrDefault(p => 
-                p.BiosType == 0x0C || p.BiosType == 0x0B || p.BiosType == 0x0E || p.BiosType == 0x07);
-
-            if (fatPartition == null)
+            if (partitionTable.Partitions.Count == 0)
             {
-                log?.Invoke("Error: No FAT32 partition found.");
-                return false;
+                log("FS: No primary partitions found. Attempting direct FAT mount...");
+                _fatFs = new FatFileSystem(_stream);
+            }
+            else
+            {
+                log($"FS: Found {partitionTable.Partitions.Count} partitions. Using first partition.");
+                var partition = partitionTable.Partitions[0];
+                _fatFs = new FatFileSystem(partition.Open());
             }
 
-            log?.Invoke($"Found partition at sector {fatPartition.FirstSector}");
-            
-            // Open the partition sub-stream via DiscUtils
-            var partStream = fatPartition.Open();
-            _fs = new FatFileSystem(partStream);
-            
-            log?.Invoke("SD Card mounted successfully.");
+            log($"FS: Mount successful. Label: {_fatFs.FriendlyName}");
             return true;
         }
         catch (Exception ex)
         {
-            log?.Invoke($"Mount error: {ex.Message}");
+            log($"FS CRITICAL: {ex.Message}");
             return false;
         }
     }
 
-    public List<FileItem> ListDir(string path = "/")
+    public List<FileItem> ListDir(string path)
     {
-        if (_fs == null) return new List<FileItem>();
-        
-        var results = new List<FileItem>();
-        var hiddenItems = new HashSet<string> { "sc64menu.n64", "System Volume Information", ".Trash-1000", "menu" };
-
-        if (path != "/" && !string.IsNullOrEmpty(path))
-        {
-            results.Add(new FileItem { Name = "..", IsDirectory = true, SizeDisplay = "<PARENT>" });
-        }
+        var items = new List<FileItem>();
+        if (_fatFs == null) return items;
 
         try
         {
-            foreach (var entry in _fs.GetFileSystemEntries(path))
+            if (path != "/")
             {
-                var name = Path.GetFileName(entry);
-                if (string.IsNullOrEmpty(name)) name = entry;
-                if (hiddenItems.Contains(name)) continue;
+                items.Add(new FileItem { Name = "..", IsDirectory = true, SizeDisplay = "<UP>" });
+            }
 
-                var isDir = _fs.DirectoryExists(entry);
-                long size = 0;
-                try { if (!isDir) size = _fs.GetFileInfo(entry).Length; } catch { }
-
-                results.Add(new FileItem
+            foreach (var dir in _fatFs.GetDirectories(path))
+            {
+                items.Add(new FileItem
                 {
-                    Name = name,
-                    IsDirectory = isDir,
-                    Size = size,
-                    SizeDisplay = isDir ? "<DIR>" : FormatSize(size)
+                    Name = Path.GetFileName(dir),
+                    IsDirectory = true,
+                    SizeDisplay = "<DIR>"
+                });
+            }
+
+            foreach (var file in _fatFs.GetFiles(path))
+            {
+                var info = _fatFs.GetFileInfo(file);
+                items.Add(new FileItem
+                {
+                    Name = Path.GetFileName(file),
+                    IsDirectory = false,
+                    SizeDisplay = FormatSize(info.Length)
                 });
             }
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"ListDir error: {ex.Message}");
-        }
+        catch { }
 
-        return results
-            .OrderByDescending(x => x.Name == "..")
-            .ThenByDescending(x => x.IsDirectory)
-            .ThenBy(x => x.Name.ToLower())
-            .ToList();
-    }
-
-    public bool Delete(string path)
-    {
-        if (_fs == null) return false;
-        try
-        {
-            if (_fs.DirectoryExists(path))
-            {
-                _fs.DeleteDirectory(path, true);
-            }
-            else
-            {
-                _fs.DeleteFile(path);
-            }
-            return true;
-        }
-        catch { return false; }
+        return items;
     }
 
     public Stream OpenFile(string path, FileMode mode)
     {
-        if (_fs == null) throw new InvalidOperationException("Not mounted");
-        return _fs.OpenFile(path, mode, FileAccess.ReadWrite);
+        if (_fatFs == null) throw new InvalidOperationException("Not mounted");
+        return _fatFs.OpenFile(path, mode);
+    }
+
+    public void DeleteFile(string path)
+    {
+        if (_fatFs == null) return;
+        _fatFs.DeleteFile(path);
+    }
+
+    public void DeleteDirectory(string path, bool recursive = true)
+    {
+        if (_fatFs == null) return;
+        _fatFs.DeleteDirectory(path, recursive);
+    }
+
+    public void Disconnect()
+    {
+        _fatFs?.Dispose();
+        _stream?.Dispose();
+        _device.SdDeinit();
     }
 
     private static string FormatSize(long size)
@@ -146,19 +127,7 @@ public class FsService
         string[] units = { "B", "KB", "MB", "GB", "TB" };
         double s = size;
         int i = 0;
-        while (s >= 1024 && i < units.Length - 1)
-        {
-            s /= 1024;
-            i++;
-        }
+        while (s >= 1024 && i < units.Length - 1) { s /= 1024; i++; }
         return $"{s:F1} {units[i]}";
-    }
-
-    public void Disconnect()
-    {
-        _fs?.Dispose();
-        _fs = null;
-        _stream?.Dispose();
-        _stream = null;
     }
 }

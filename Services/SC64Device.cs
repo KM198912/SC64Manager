@@ -87,30 +87,49 @@ public class SC64Device : IDisposable
             _serial.Write(header, 0, 12);
             if (data != null) _serial.Write(data, 0, data.Length);
 
-            byte[] respHeader = new byte[8];
-            int read = 0;
-            while (read < 8)
-            {
-                int r = _serial.Read(respHeader, read, 8 - read);
-                if (r == 0) return (true, null);
-                read += r;
-            }
+            int pktRetries = 0;
+            const int MaxPktRetries = 100;
 
-            string ident = Encoding.ASCII.GetString(respHeader, 0, 3);
-            uint dataLen = ReadUInt32BE(respHeader, 4);
-            bool isError = ident == "ERR";
-
-            if (dataLen > 0)
+            while (pktRetries < MaxPktRetries)
             {
-                byte[] respData = new byte[dataLen];
-                int dataRead = 0;
-                while (dataRead < (int)dataLen)
+                byte[] respHeader = new byte[8];
+                int read = 0;
+                while (read < 8)
                 {
-                    dataRead += _serial.Read(respData, dataRead, (int)dataLen - dataRead);
+                    int r = _serial.Read(respHeader, read, 8 - read);
+                    if (r == 0) return (true, null);
+                    read += r;
                 }
-                return (isError, respData);
+
+                string ident = Encoding.ASCII.GetString(respHeader, 0, 3);
+                uint dataLen = ReadUInt32BE(respHeader, 4);
+
+                if (ident == "PKT")
+                {
+                    pktRetries++;
+                    if (dataLen > 0)
+                    {
+                        byte[] junk = new byte[dataLen];
+                        int jRead = 0;
+                        while(jRead < (int)dataLen) jRead += _serial.Read(junk, jRead, (int)dataLen - jRead);
+                    }
+                    continue; 
+                }
+
+                bool isError = ident == "ERR";
+                if (dataLen > 0)
+                {
+                    byte[] respData = new byte[dataLen];
+                    int dataRead = 0;
+                    while (dataRead < (int)dataLen)
+                    {
+                        dataRead += _serial.Read(respData, dataRead, (int)dataLen - dataRead);
+                    }
+                    return (isError, respData);
+                }
+                return (isError, Array.Empty<byte>());
             }
-            return (isError, Array.Empty<byte>());
+            return (true, null); // Hit retry limit
         }
         catch { return (true, null); }
         finally { _serialLock.Release(); }
@@ -152,13 +171,40 @@ public class SC64Device : IDisposable
         return !err;
     }
 
-    public async Task<int> GetUpdateStatusAsync()
+    public (bool success, uint status) SdInit()
     {
-        // UPDATE_STATUS is an asynchronous PKT packet.
-        // For simplicity in V1, we'll poll the serial with Read() for any 'PKT' 'F' packets
-        // but since we have a lock, we need a method that can check the buffer.
-        // We'll skip complex polling for now and return 'Success' if the command returns CMP.
-        return 0x80; 
+        var (err, data) = ExecuteCmd('i', 0, 1); // Op 1: Init
+        uint status = (data != null && data.Length >= 8) ? ReadUInt32BE(data, 4) : 0;
+        return (!err, status);
+    }
+
+    public bool SdDeinit()
+    {
+        var (err, _) = ExecuteCmd('i', 0, 0); // Op 0: Deinit
+        return !err;
+    }
+
+    public byte[]? SdReadSectors(uint sector, uint count, uint bufferAddr)
+    {
+        // 1. Move from SD -> Cart RAM
+        byte[] sBuf = new byte[4];
+        WriteUInt32BE(sBuf, 0, sector);
+        var (errRead, _) = ExecuteCmd('s', bufferAddr, count, sBuf);
+        if (errRead) return null;
+
+        // 2. Hardware Sync Delay (Matches official protocol)
+        Thread.Sleep(10);
+
+        // 3. Fetch from Cart RAM -> PC
+        return MemoryRead(bufferAddr, count * 512);
+    }
+
+    public bool SdWriteSectors(uint sector, uint count, uint bufferAddr)
+    {
+        byte[] sBuf = new byte[4];
+        WriteUInt32BE(sBuf, 0, sector);
+        var (err, _) = ExecuteCmd('S', bufferAddr, count, sBuf);
+        return !err;
     }
 
     private static void WriteUInt32BE(byte[] data, int offset, uint value)

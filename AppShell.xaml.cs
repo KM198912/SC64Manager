@@ -1,4 +1,4 @@
-﻿namespace NetGui;
+namespace NetGui;
 
 public partial class AppShell : Shell
 {

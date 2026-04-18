@@ -27,6 +27,9 @@
                         <Border BackgroundColor="{Binding StatusColor}" StrokeShape="RoundRectangle 10" Padding="8,2" VerticalOptions="Center">
                             <Label Text="{Binding StatusText}" FontSize="12" TextColor="Black" FontAttributes="Bold"/>
                         </Border>
+                        <Border IsVisible="{Binding IsUpToDate}" BackgroundColor="#1b5e20" StrokeShape="RoundRectangle 10" Padding="8,2" VerticalOptions="Center">
+                            <Label Text="LATEST" FontSize="10" TextColor="White" FontAttributes="Bold"/>
+                        </Border>
                     </HorizontalStackLayout>
 
                     <HorizontalStackLayout Grid.Column="1" Spacing="10" Margin="0,0,20,0" VerticalOptions="Center">
@@ -96,10 +99,10 @@
                 <HorizontalStackLayout Grid.Row="1" Spacing="10" Margin="0,0,0,5">
                     <Button Text="Upload" Command="{Binding UploadFileCommand}" 
                             BackgroundColor="#0078d4" Padding="10,0" HeightRequest="30" FontSize="12"/>
-                    <Button Text="Delete Selected" Command="{Binding DeleteSelectedCommand}" 
-                            BackgroundColor="#f44336" Padding="10,0" HeightRequest="30" FontSize="12"/>
                     <Button Text="Refresh" Command="{Binding RefreshRemoteFilesCommand}" 
                             BackgroundColor="#00897b" TextColor="White" Padding="15,0" HeightRequest="30" FontSize="12"/>
+                    <Button Text="Delete" Command="{Binding DeleteSelectedCommand}" 
+                            BackgroundColor="#c62828" TextColor="White" Padding="15,0" HeightRequest="30" FontSize="12"/>
                 </HorizontalStackLayout>
 
                 <Border Grid.Row="2" BackgroundColor="#252525" StrokeShape="RoundRectangle 8">
@@ -139,11 +142,24 @@
             </Grid>
 
             <!-- Status Log -->
-            <Border Grid.Row="3" Grid.ColumnSpan="2" BackgroundColor="#111111" StrokeThickness="1" Stroke="#333333" Margin="0,20,0,0" HeightRequest="120">
-                <ScrollView x:Name="LogScrollView">
-                    <Label Text="{Binding LogText}" TextColor="#00ff00" FontFamily="Consolas" FontSize="12" Padding="10"/>
-                </ScrollView>
-            </Border>
+            <Grid Grid.Row="3" Grid.ColumnSpan="2" HeightRequest="150" Margin="0,20,0,0">
+                <Border BackgroundColor="#111111" StrokeThickness="1" Stroke="#333333">
+                    <Grid>
+                        <ScrollView x:Name="LogScrollView" Padding="10">
+                            <Label x:Name="LogLabel" Text="{Binding LogText}" TextColor="#00ff00" FontFamily="Consolas" FontSize="12"/>
+                        </ScrollView>
+                        
+                        <!-- Floating Log Tools -->
+                        <HorizontalStackLayout HorizontalOptions="End" VerticalOptions="Start" Padding="10" Spacing="10">
+                            <Button Text="&#xE16F;" FontFamily="Segoe MDL2 Assets" 
+                                    Command="{Binding CopyLogsCommand}"
+                                    BackgroundColor="#222222" TextColor="White" 
+                                    WidthRequest="35" HeightRequest="35" FontSize="14"
+                                    ToolTipProperties.Text="Copy Logs"/>
+                        </HorizontalStackLayout>
+                    </Grid>
+                </Border>
+            </Grid>
         </Grid>
 
         <!-- Fullscreen Progress Overlay -->

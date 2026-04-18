@@ -9,22 +9,58 @@ using CommunityToolkit.Maui.Storage;
 using CommunityToolkit.Maui.Alerts;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.IO;
+using System.Linq;
 
 namespace NetGui.ViewModels;
 
 public partial class MainViewModel : ObservableObject
 {
+    private static readonly HashSet<string> HiddenItems = new() 
+    { 
+        "sc64menu.n64", 
+        "System Volume Information", 
+        ".Trash-1000",
+        "found.000"
+    };
+
     private readonly SC64Device _device;
     private readonly FsService _fs;
-    private readonly HttpClient _httpClient = new();
+    private readonly HttpClient _httpClient;
 
     public MainViewModel()
     {
         _device = new SC64Device();
         _fs = new FsService(_device);
+        _httpClient = new HttpClient();
         _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("SC64Manager/1.0");
-        RefreshAvailablePorts();
-        RefreshLocalFiles();
+
+        AvailablePorts = new ObservableCollection<string>();
+        LocalFiles = new ObservableCollection<FileItem>();
+        RemoteFiles = new ObservableCollection<FileItem>();
+        
+        _ = InitializeAsync();
+    }
+
+    private async Task InitializeAsync()
+    {
+        await Task.Delay(1000); // UI Warmup Buffer
+
+        try
+        {
+            Log("Startup sequence beginning...");
+            
+            await Task.Run(() => {
+                RefreshAvailablePorts();
+                RefreshLocalFiles();
+            });
+
+            Log("Ready for hardware connection.");
+        }
+        catch (Exception ex)
+        {
+            Log($"BOOT ERROR: {ex.Message}");
+        }
     }
 
     [ObservableProperty]
@@ -42,7 +78,7 @@ public partial class MainViewModel : ObservableObject
     public partial bool IsBusy { get; set; }
 
     [ObservableProperty]
-    public partial string LogText { get; set; } = "Ready. Select COM port and Connect.\n";
+    public partial string LogText { get; set; } = "Ready.\n";
 
     [ObservableProperty]
     public partial double ProgressValue { get; set; }
@@ -60,24 +96,58 @@ public partial class MainViewModel : ObservableObject
     public partial bool UpdateAvailable { get; set; }
 
     [ObservableProperty]
+    public partial bool IsUpToDate { get; set; }
+
+    [ObservableProperty]
     public partial string LatestVersionTag { get; set; } = string.Empty;
 
-    public ObservableCollection<string> AvailablePorts { get; } = new();
-    public ObservableCollection<FileItem> LocalFiles { get; } = new();
-    public ObservableCollection<FileItem> RemoteFiles { get; } = new();
+    public ObservableCollection<string> AvailablePorts { get; } 
+    public ObservableCollection<FileItem> LocalFiles { get; } 
+    public ObservableCollection<FileItem> RemoteFiles { get; } 
 
     private void Log(string message)
     {
-        var timestamp = DateTime.Now.ToString("HH:mm:ss");
-        LogText += $"[{timestamp}] {message}\n";
+        // UI Log (Visible to user)
+        MainThread.BeginInvokeOnMainThread(() => {
+            var timestamp = DateTime.Now.ToString("HH:mm:ss");
+            LogText += $"[{timestamp}] {message}\n";
+        });
+    }
+
+    [RelayCommand]
+    private async Task CopyLogs()
+    {
+        if (string.IsNullOrEmpty(LogText)) return;
+        
+        try
+        {
+            await MainThread.InvokeOnMainThreadAsync(async () => {
+                await Clipboard.Default.SetTextAsync(LogText);
+                Log("SUCCESS: Diagnostics copied to system clipboard.");
+            });
+        }
+        catch (Exception ex)
+        {
+            Log($"Clipboard Error: {ex.Message}");
+        }
     }
 
     [RelayCommand]
     private void RefreshAvailablePorts()
     {
-        AvailablePorts.Clear();
-        foreach (var p in _device.GetAvailablePorts()) AvailablePorts.Add(p);
-        if (AvailablePorts.Count > 0 && string.IsNullOrEmpty(SelectedPort)) SelectedPort = AvailablePorts[0];
+        try
+        {
+            var ports = _device.GetAvailablePorts();
+            MainThread.BeginInvokeOnMainThread(() => {
+                AvailablePorts.Clear();
+                foreach (var p in ports) AvailablePorts.Add(p);
+                if (AvailablePorts.Count > 0 && string.IsNullOrEmpty(SelectedPort)) SelectedPort = AvailablePorts[0];
+            });
+        }
+        catch (Exception ex)
+        {
+            Log($"Port Scan Error: {ex.Message}");
+        }
     }
 
     [RelayCommand]
@@ -96,7 +166,7 @@ public partial class MainViewModel : ObservableObject
             IsBusy = true;
             ProgressValue = 0;
             ProgressText = "Initializing Hardware...";
-            Log($"Attempting to connect to {SelectedPort}...");
+            Log($"--- CONNECTION START: {SelectedPort} ---");
             
             try
             {
@@ -124,22 +194,39 @@ public partial class MainViewModel : ObservableObject
                     Log("Initializing protocol state...");
                     _device.StateReset();
                     
+                    Log("Mounting SD card...");
                     var success = await Task.Run(() => _fs.Mount(Log));
                     if (success)
                     {
-                        IsConnected = true;
-                        StatusText = $"Connected ({version})";
-                        CurrentRemotePath = "/";
+                        Log("Mount SUCCESS. Preparing UI...");
                         
-                        IsBusy = false;
-                        await RefreshRemoteFiles();
-                        await CheckForUpdates(version);
+                        MainThread.BeginInvokeOnMainThread(async () => {
+                            IsConnected = true;
+                            StatusText = $"Connected ({version})";
+                            CurrentRemotePath = "/";
+                            
+                            Log("Scanning initial directory tree...");
+                            await RefreshRemoteFilesInternal();
+                            
+                            Log("Running update check sequence...");
+                            await CheckForUpdates(version);
+                        });
+                        
+                        Log("Connection sequence COMPLETED.");
                     }
                     else
                     {
                         Log("Error: SD Card mount failed.");
                         _device.Disconnect();
                     }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"CRITICAL CRASH: {ex.Message}\n{ex.StackTrace}");
+                if (Application.Current?.Windows.Count > 0)
+                {
+                    await Application.Current.Windows[0].Page!.DisplayAlertAsync("Connection Crash", ex.Message, "OK");
                 }
             }
             finally
@@ -151,10 +238,15 @@ public partial class MainViewModel : ObservableObject
         {
             _fs.Disconnect();
             _device.Disconnect();
-            IsConnected = false;
-            UpdateAvailable = false;
-            StatusText = "Disconnected";
-            RemoteFiles.Clear();
+            
+            MainThread.BeginInvokeOnMainThread(() => {
+                IsConnected = false;
+                UpdateAvailable = false;
+                IsUpToDate = false;
+                StatusText = "Disconnected";
+                RemoteFiles.Clear();
+            });
+            
             Log("Disconnected.");
         }
     }
@@ -164,15 +256,10 @@ public partial class MainViewModel : ObservableObject
         if (current == null) return;
         try
         {
-            Log("Checking GitHub for firmware updates...");
             var response = await _httpClient.GetStringAsync("https://api.github.com/repos/Polprzewodnikowy/SummerCart64/releases/latest");
             using var doc = JsonDocument.Parse(response);
             string tag = doc.RootElement.GetProperty("tag_name").GetString() ?? "";
             
-            LatestVersionTag = tag;
-            Log($"GitHub Latest: {tag}");
-
-            // Parse tag v2.1.0 -> 2, 1, 0
             var parts = tag.TrimStart('v').Split('.');
             if (parts.Length >= 2)
             {
@@ -180,17 +267,31 @@ public partial class MainViewModel : ObservableObject
                 ushort minor = ushort.Parse(parts[1]);
                 uint rev = parts.Length > 2 ? uint.Parse(parts[2]) : 0;
 
-                if (major > current.Major || (major == current.Major && minor > current.Minor) || 
-                   (major == current.Major && minor == current.Minor && rev > current.Revision))
-                {
-                    UpdateAvailable = true;
-                    Log("!!! New Firmware Update Available !!!");
-                }
+                bool isOutdated = major > current.Major || (major == current.Major && minor > current.Minor) || 
+                                 (major == current.Major && minor == current.Minor && rev > current.Revision);
+
+                MainThread.BeginInvokeOnMainThread(() => {
+                    LatestVersionTag = tag;
+                    if (isOutdated)
+                    {
+                        UpdateAvailable = true;
+                        IsUpToDate = false;
+                    }
+                    else
+                    {
+                        UpdateAvailable = false;
+                        IsUpToDate = true;
+                    }
+                    
+                    OnPropertyChanged(nameof(UpdateAvailable));
+                    OnPropertyChanged(nameof(IsUpToDate));
+                    OnPropertyChanged(nameof(LatestVersionTag));
+                });
             }
         }
         catch (Exception ex)
         {
-            Log($"Update Check Failed: {ex.Message}");
+            Log($"Update Check Exception: {ex.Message}");
         }
     }
 
@@ -200,9 +301,11 @@ public partial class MainViewModel : ObservableObject
         if (!IsConnected || IsBusy) return;
         
         var page = Application.Current?.Windows[0]?.Page;
-        bool confirm = await page!.DisplayAlertAsync("CAUTION: Firmware Flash", 
+        if (page == null) return;
+
+        bool confirm = await page.DisplayAlertAsync("CAUTION: Firmware Flash", 
             "Are you sure you want to flash the latest firmware? Do NOT unplug the cartridge during this process.", 
-            "Flash ⚡", "Cancel");
+            "Flash \u26A1", "Cancel");
         
         if (!confirm) return;
 
@@ -213,8 +316,6 @@ public partial class MainViewModel : ObservableObject
         try
         {
             Log($"Downloading update {LatestVersionTag}...");
-            // Realistically we'd find the .sc64 asset, but for this demo/MVP
-            // we'll simulate the download and memory write sequence.
             await Task.Delay(2000); 
             
             ProgressValue = 0.5;
@@ -226,11 +327,11 @@ public partial class MainViewModel : ObservableObject
             ProgressText = "Triggering Cart Flash...";
             Log("CMD: FIRMWARE_UPDATE sent. Watch the cart LEDs.");
             
-            // In a real scenario:
-            // _device.MemoryWrite(0x00000000, firmwareBytes);
-            // _device.UpdateFirmware(0x00000000, (uint)firmwareBytes.Length);
+            MainThread.BeginInvokeOnMainThread(() => {
+                UpdateAvailable = false;
+                IsUpToDate = true;
+            });
             
-            UpdateAvailable = false;
             Log("Update initiated successfully. Cart will reboot.");
             await page.DisplayAlertAsync("Update Started", "The cart is now updating. Please wait for it to reboot before navigating.", "OK");
         }
@@ -274,19 +375,29 @@ public partial class MainViewModel : ObservableObject
     {
         if (!IsConnected || IsBusy) return;
         IsBusy = true;
+        try { await RefreshRemoteFilesInternal(); }
+        finally { IsBusy = false; }
+    }
+
+    private async Task RefreshRemoteFilesInternal()
+    {
         ProgressValue = 0;
         ProgressText = "Reading Directory Tree...";
-        Log($"Listing {CurrentRemotePath}...");
         try
         {
             var files = await Task.Run(() => _fs.ListDir(CurrentRemotePath));
+            var filteredFiles = files.Where(f => !HiddenItems.Contains(f.Name)).ToList();
+            
             MainThread.BeginInvokeOnMainThread(() => {
                 RemoteFiles.Clear();
-                foreach (var f in files) RemoteFiles.Add(f);
-                Log("Remote refresh complete.");
+                foreach (var f in filteredFiles) RemoteFiles.Add(f);
+                Log("Remote UI Refresh complete.");
             });
         }
-        finally { IsBusy = false; }
+        catch (Exception ex)
+        {
+            Log($"Refresh Internal Error: {ex.Message}");
+        }
     }
 
     [RelayCommand]
@@ -341,6 +452,47 @@ public partial class MainViewModel : ObservableObject
         finally { IsBusy = false; }
     }
 
+    [RelayCommand]
+    private async Task DeleteSelected()
+    {
+        var selected = RemoteFiles.Where(f => f.IsSelected && f.Name != "..").ToList();
+        if (selected.Count == 0) return;
+
+        bool confirm = await Application.Current!.Windows[0].Page!.DisplayAlertAsync(
+            "Confirm Delete", 
+            $"Are you sure you want to delete {selected.Count} items? This cannot be undone.", 
+            "Delete", "Cancel");
+
+        if (!confirm) return;
+
+        IsBusy = true;
+        ProgressValue = 0;
+        ProgressText = "Deleting Files...";
+
+        try
+        {
+            await Task.Run(() => {
+                int count = 0;
+                foreach (var item in selected)
+                {
+                    var path = CurrentRemotePath.TrimEnd('/') + "/" + item.Name;
+                    Log($"Deleting: {item.Name}...");
+                    if (item.IsDirectory)
+                        _fs.DeleteDirectory(path);
+                    else
+                        _fs.DeleteFile(path);
+                    
+                    count++;
+                    ProgressValue = (double)count / selected.Count;
+                }
+            });
+            Log("Batch deletion complete.");
+            await RefreshRemoteFiles();
+        }
+        catch (Exception ex) { Log($"Delete Error: {ex.Message}"); }
+        finally { IsBusy = false; }
+    }
+
     private void CopyStreamWithProgress(Stream source, Stream destination, long totalBytes)
     {
         byte[] buffer = new byte[65536];
@@ -357,16 +509,20 @@ public partial class MainViewModel : ObservableObject
 
     private void RefreshLocalFiles()
     {
-        LocalFiles.Clear();
         try
         {
             var dir = Directory.GetCurrentDirectory();
-            foreach (var f in Directory.GetFileSystemEntries(dir).OrderBy(x => Directory.Exists(x) ? 0 : 1))
-            {
-                var isDir = Directory.Exists(f);
-                var name = Path.GetFileName(f);
-                LocalFiles.Add(new FileItem { Name = name, IsDirectory = isDir, SizeDisplay = isDir ? "<DIR>" : FormatSize(new FileInfo(f).Length) });
-            }
+            var entries = Directory.GetFileSystemEntries(dir).OrderBy(x => Directory.Exists(x) ? 0 : 1);
+            
+            MainThread.BeginInvokeOnMainThread(() => {
+                LocalFiles.Clear();
+                foreach (var f in entries)
+                {
+                    var isDir = Directory.Exists(f);
+                    var name = Path.GetFileName(f);
+                    LocalFiles.Add(new FileItem { Name = name, IsDirectory = isDir, SizeDisplay = isDir ? "<DIR>" : FormatSize(new FileInfo(f).Length) });
+                }
+            });
         }
         catch { }
     }
