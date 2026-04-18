@@ -17,13 +17,13 @@
 
     <Grid>
         <!-- Main Application Layout -->
-        <Grid RowDefinitions="Auto, *, Auto" ColumnDefinitions="*, *" Padding="20" ColumnSpacing="20">
+        <Grid RowDefinitions="Auto, Auto, *, Auto" ColumnDefinitions="*, *" Padding="20" ColumnSpacing="20">
 
             <!-- Header -->
-            <Border Grid.Row="0" Grid.ColumnSpan="2" BackgroundColor="#252525" StrokeShape="RoundRectangle 8" Padding="15" Margin="0,0,0,20">
+            <Border Grid.Row="0" Grid.ColumnSpan="2" BackgroundColor="#252525" StrokeShape="RoundRectangle 8" Padding="15" Margin="0,0,0,10">
                 <Grid ColumnDefinitions="*, Auto, Auto, Auto">
                     <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
-                        <Label Text="SummerCart64 GUI Manager" FontSize="20" FontAttributes="Bold" TextColor="White" VerticalOptions="Center"/>
+                        <Label Text="SC64 Manager" FontSize="20" FontAttributes="Bold" TextColor="White" VerticalOptions="Center"/>
                         <Border BackgroundColor="{Binding StatusColor}" StrokeShape="RoundRectangle 10" Padding="8,2" VerticalOptions="Center">
                             <Label Text="{Binding StatusText}" FontSize="12" TextColor="Black" FontAttributes="Bold"/>
                         </Border>
@@ -52,8 +52,23 @@
                 </Grid>
             </Border>
 
+            <!-- Update Banner -->
+            <Border Grid.Row="1" Grid.ColumnSpan="2" IsVisible="{Binding UpdateAvailable}" 
+                    BackgroundColor="#332a00" Stroke="#ffd700" StrokeThickness="1" 
+                    StrokeShape="RoundRectangle 8" Padding="15" Margin="0,0,0,10">
+                <Grid ColumnDefinitions="Auto, *, Auto">
+                    <Label Text="✨" FontSize="20" VerticalOptions="Center"/>
+                    <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Margin="15,0">
+                        <Label Text="Firmware Update Available!" FontAttributes="Bold" TextColor="#ffd700" FontSize="14"/>
+                        <Label Text="{Binding LatestVersionTag, StringFormat='Version {0} is now available on GitHub.'}" TextColor="#bbbbbb" FontSize="12"/>
+                    </VerticalStackLayout>
+                    <Button Grid.Column="2" Text="Update Now ⚡" Command="{Binding FlashFirmwareCommand}" 
+                            BackgroundColor="#ffd700" TextColor="Black" FontAttributes="Bold" Padding="20,0"/>
+                </Grid>
+            </Border>
+
             <!-- Local Files -->
-            <Grid Grid.Row="1" Grid.Column="0" RowDefinitions="Auto, *">
+            <Grid Grid.Row="2" Grid.Column="0" RowDefinitions="Auto, *">
                 <Label Grid.Row="0" Text="Local Workstation" FontSize="16" FontAttributes="Bold" TextColor="#0078d4" Margin="0,0,0,10"/>
                 <Border Grid.Row="1" BackgroundColor="#252525" StrokeShape="RoundRectangle 8">
                     <CollectionView ItemsSource="{Binding LocalFiles}">
@@ -72,7 +87,7 @@
             </Grid>
 
             <!-- Remote Files -->
-            <Grid Grid.Row="1" Grid.Column="1" RowDefinitions="Auto, Auto, *">
+            <Grid Grid.Row="2" Grid.Column="1" RowDefinitions="Auto, Auto, *">
                 <HorizontalStackLayout Grid.Row="0" Spacing="10" Margin="0,0,0,5">
                     <Label Text="SummerCart64 SD" FontSize="16" FontAttributes="Bold" TextColor="#4caf50" VerticalOptions="Center"/>
                     <Label Text="{Binding CurrentRemotePath}" TextColor="#888888" VerticalOptions="Center" FontSize="13"/>
@@ -124,7 +139,7 @@
             </Grid>
 
             <!-- Status Log -->
-            <Border Grid.Row="2" Grid.ColumnSpan="2" BackgroundColor="#111111" StrokeThickness="1" Stroke="#333333" Margin="0,20,0,0" HeightRequest="120">
+            <Border Grid.Row="3" Grid.ColumnSpan="2" BackgroundColor="#111111" StrokeThickness="1" Stroke="#333333" Margin="0,20,0,0" HeightRequest="120">
                 <ScrollView x:Name="LogScrollView">
                     <Label Text="{Binding LogText}" TextColor="#00ff00" FontFamily="Consolas" FontSize="12" Padding="10"/>
                 </ScrollView>
@@ -136,8 +151,8 @@
             <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center" Spacing="20">
                 <Border BackgroundColor="#2a2a2a" Padding="40" StrokeShape="RoundRectangle 12" StrokeThickness="1" Stroke="#444444">
                     <VerticalStackLayout Spacing="15" WidthRequest="400">
-                        <Label Text="High-Speed Transfer in Progress" FontSize="18" FontAttributes="Bold" TextColor="White" HorizontalOptions="Center"/>
-                        <Label Text="{Binding StatusText}" FontSize="14" TextColor="#aaaaaa" HorizontalOptions="Center" Margin="0,0,0,10"/>
+                        <Label Text="Hardware Operation in Progress" FontSize="18" FontAttributes="Bold" TextColor="White" HorizontalOptions="Center"/>
+                        <Label Text="{Binding ProgressText}" FontSize="14" TextColor="#aaaaaa" HorizontalOptions="Center" Margin="0,0,0,10"/>
                         
                         <ProgressBar Progress="{Binding ProgressValue}" HeightRequest="12" ProgressColor="#0078d4" BackgroundColor="#1a1a1a"/>
                         
