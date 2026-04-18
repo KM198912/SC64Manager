@@ -1,0 +1,30 @@
+# .NET / MAUI
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Tt]est[Rr]esult*/
+.vs/
+.vscode/
+*.user
+*.userosscache
+*.sln.doccache
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Project Specific
+.gemini/
+*.log
+artifacts/
+brain/
+temp/
