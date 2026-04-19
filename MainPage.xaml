@@ -22,10 +22,24 @@
             <!-- Header -->
             <Border Grid.Row="0" Grid.ColumnSpan="2" BackgroundColor="#252525" StrokeShape="RoundRectangle 8" Padding="15" Margin="0,0,0,10">
                 <Grid ColumnDefinitions="*, Auto, Auto, Auto">
-                    <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
+                    <HorizontalStackLayout Spacing="12" VerticalOptions="Center">
+                        <!-- Branding Logo with Link -->
+                        <Image Source="sc64.png" 
+                               WidthRequest="30" 
+                               HeightRequest="30" 
+                               VerticalOptions="Center"
+                               ToolTipProperties.Text="Visit summercart64.dev">
+                            <Image.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnLogoTapped" />
+                            </Image.GestureRecognizers>
+                        </Image>
+
                         <Label Text="SC64 Manager" FontSize="20" FontAttributes="Bold" TextColor="White" VerticalOptions="Center"/>
                         <Border BackgroundColor="{Binding StatusColor}" StrokeShape="RoundRectangle 10" Padding="8,2" VerticalOptions="Center">
                             <Label Text="{Binding StatusText}" FontSize="12" TextColor="Black" FontAttributes="Bold"/>
+                        </Border>
+                        <Border IsVisible="{Binding IsConnected}" BackgroundColor="#2c3e50" StrokeShape="RoundRectangle 10" Padding="8,2" VerticalOptions="Center">
+                            <Label Text="{Binding StatusTextN64}" FontSize="12" TextColor="White" FontAttributes="Bold"/>
                         </Border>
                         <Border IsVisible="{Binding IsUpToDate}" BackgroundColor="#1b5e20" StrokeShape="RoundRectangle 10" Padding="8,2" VerticalOptions="Center">
                             <Label Text="LATEST" FontSize="10" TextColor="White" FontAttributes="Bold"/>
@@ -40,6 +54,15 @@
                                 TextColor="White"
                                 BackgroundColor="#333333"/>
                         <Button Text="🔄" Command="{Binding RefreshAvailablePortsCommand}" BackgroundColor="Transparent"/>
+                        <Button Text="🐚 Debug" 
+                                Command="{Binding OpenDebugConsoleCommand}" 
+                                IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBoolConverter}}"
+                                BackgroundColor="#2c3e50" 
+                                TextColor="White" 
+                                FontSize="12" 
+                                HeightRequest="32"
+                                Padding="10,0"
+                                ToolTipProperties.Text="Launch External Debug Console"/>
                     </HorizontalStackLayout>
 
                     <ActivityIndicator Grid.Column="2" IsRunning="{Binding IsBusy}" Color="#0078d4" WidthRequest="30" Margin="0,0,10,0"/>
@@ -55,33 +78,74 @@
                 </Grid>
             </Border>
 
-            <!-- Update Banner -->
-            <Border Grid.Row="1" Grid.ColumnSpan="2" IsVisible="{Binding UpdateAvailable}" 
-                    BackgroundColor="#332a00" Stroke="#ffd700" StrokeThickness="1" 
-                    StrokeShape="RoundRectangle 8" Padding="15" Margin="0,0,0,10">
-                <Grid ColumnDefinitions="Auto, *, Auto">
-                    <Label Text="✨" FontSize="20" VerticalOptions="Center"/>
-                    <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Margin="15,0">
-                        <Label Text="Firmware Update Available!" FontAttributes="Bold" TextColor="#ffd700" FontSize="14"/>
-                        <Label Text="{Binding LatestVersionTag, StringFormat='Version {0} is now available on GitHub.'}" TextColor="#bbbbbb" FontSize="12"/>
-                    </VerticalStackLayout>
-                    <Button Grid.Column="2" Text="Update Now ⚡" Command="{Binding FlashFirmwareCommand}" 
-                            BackgroundColor="#ffd700" TextColor="Black" FontAttributes="Bold" Padding="20,0"/>
-                </Grid>
-            </Border>
+            <!-- Banners Section -->
+            <VerticalStackLayout Grid.Row="1" Grid.ColumnSpan="2" Spacing="0">
+                <!-- Update Banner -->
+                <Border IsVisible="{Binding UpdateAvailable}" 
+                        BackgroundColor="#332a00" Stroke="#ffd700" StrokeThickness="1" 
+                        StrokeShape="RoundRectangle 8" Padding="15" Margin="0,0,0,10">
+                    <Grid ColumnDefinitions="Auto, *, Auto">
+                        <Label Text="✨" FontSize="20" VerticalOptions="Center"/>
+                        <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Margin="15,0">
+                            <Label Text="Firmware Update Available!" FontAttributes="Bold" TextColor="#ffd700" FontSize="14"/>
+                            <Label Text="{Binding LatestVersionTag, StringFormat='Version {0} is now available on GitHub.'}" TextColor="#bbbbbb" FontSize="12"/>
+                        </VerticalStackLayout>
+                        <Button Grid.Column="2" Text="Update Now ⚡" Command="{Binding GoToUpdateCommand}" 
+                                BackgroundColor="#ffd700" TextColor="Black" FontAttributes="Bold" Padding="20,0"/>
+                    </Grid>
+                </Border>
+    
+                <!-- Power Safety Banner -->
+                <Border IsVisible="{Binding IsN64PoweredOn}" 
+                        BackgroundColor="#3c1b00" Stroke="#ff8c00" StrokeThickness="1" 
+                        StrokeShape="RoundRectangle 8" Padding="15" Margin="0,0,0,10">
+                    <Grid ColumnDefinitions="Auto, *">
+                        <Label Text="⚠️" FontSize="20" VerticalOptions="Center"/>
+                        <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Margin="15,0">
+                            <Label Text="N64 is Powered On" FontAttributes="Bold" TextColor="#ff8c00" FontSize="14"/>
+                            <Label Text="SD Card modifications are restricted while the console is energized for hardware safety." TextColor="#bbbbbb" FontSize="12"/>
+                        </VerticalStackLayout>
+                    </Grid>
+                </Border>
+            </VerticalStackLayout>
 
             <!-- Local Files -->
-            <Grid Grid.Row="2" Grid.Column="0" RowDefinitions="Auto, *">
-                <Label Grid.Row="0" Text="Local Workstation" FontSize="16" FontAttributes="Bold" TextColor="#0078d4" Margin="0,0,0,10"/>
-                <Border Grid.Row="1" BackgroundColor="#252525" StrokeShape="RoundRectangle 8">
+            <Grid Grid.Row="2" Grid.Column="0" RowDefinitions="Auto, Auto, *">
+                <HorizontalStackLayout Grid.Row="0" Spacing="10" Margin="0,0,0,10">
+                    <Label Text="Local Workstation" FontSize="16" FontAttributes="Bold" TextColor="#0078d4" VerticalOptions="Center"/>
+                    <Label Text="{Binding CurrentLocalPath}" TextColor="#888888" VerticalOptions="Center" FontSize="13" LineBreakMode="HeadTruncation"/>
+                </HorizontalStackLayout>
+
+                <HorizontalStackLayout Grid.Row="1" Spacing="10" Margin="0,0,0,10">
+                    <Button Text="Refresh" Command="{Binding RefreshLocalFilesCommand}" 
+                            BackgroundColor="#008080" TextColor="White" Padding="15,0" HeightRequest="36" />
+                </HorizontalStackLayout>
+                
+                <Border Grid.Row="2" BackgroundColor="#252525" StrokeShape="RoundRectangle 8">
                     <CollectionView ItemsSource="{Binding LocalFiles}">
                         <CollectionView.ItemTemplate>
                             <DataTemplate x:DataType="models:FileItem">
-                                <Grid ColumnDefinitions="30, *, Auto" Padding="10,5">
-                                    <Label Text="&#xED25;" FontFamily="Segoe MDL2 Assets" IsVisible="{Binding IsDirectory}" VerticalOptions="Center" TextColor="#FFD700"/>
-                                    <Label Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" IsVisible="{Binding IsDirectory, Converter={StaticResource InverseBoolConverter}}" VerticalOptions="Center" TextColor="#E0E0E0"/>
-                                    <Label Grid.Column="1" Text="{Binding Name}" TextColor="White" VerticalOptions="Center" Margin="5,0,0,0"/>
-                                    <Label Grid.Column="2" Text="{Binding SizeDisplay}" TextColor="#888888" VerticalOptions="Center" FontSize="12"/>
+                                <Grid ColumnDefinitions="30, *, Auto, 40" Padding="10,5">
+                                    <Label Text="&#xED25;" FontFamily="Segoe MDL2 Assets" IsVisible="{Binding IsDirectory}" VerticalOptions="Center" TextColor="#FFD700">
+                                        <Label.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=NavigateLocalCommand}" CommandParameter="{Binding .}"/>
+                                        </Label.GestureRecognizers>
+                                    </Label>
+                                    <Label Grid.Column="1" Text="{Binding Name}" TextColor="White" VerticalOptions="Center" Margin="5,0,0,0">
+                                        <Label.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=NavigateLocalCommand}" CommandParameter="{Binding .}"/>
+                                        </Label.GestureRecognizers>
+                                    </Label>
+                                    <Label Grid.Column="2" Text="{Binding SizeDisplay}" TextColor="#888888" VerticalOptions="Center" FontSize="12" Margin="0,0,5,0"/>
+                                    
+                                    <Button Grid.Column="3" Text="&#xE111;" FontFamily="Segoe MDL2 Assets" 
+                                            IsVisible="{Binding IsDirectory, Converter={StaticResource InverseBoolConverter}}"
+                                            Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=UploadLocalFileItemCommand}"
+                                            CommandParameter="{Binding .}"
+                                            IsEnabled="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=CanModifyRemoteFs}"
+                                            BackgroundColor="Transparent" TextColor="#FFD700"
+                                            Padding="0" WidthRequest="30" HeightRequest="25" FontSize="14"
+                                            ToolTipProperties.Text="Upload to SD"/>
                                 </Grid>
                             </DataTemplate>
                         </CollectionView.ItemTemplate>
@@ -96,20 +160,26 @@
                     <Label Text="{Binding CurrentRemotePath}" TextColor="#888888" VerticalOptions="Center" FontSize="13"/>
                 </HorizontalStackLayout>
                 
-                <HorizontalStackLayout Grid.Row="1" Spacing="10" Margin="0,0,0,5">
+                <HorizontalStackLayout Grid.Row="1" Spacing="10" Margin="0,0,0,10">
                     <Button Text="Upload" Command="{Binding UploadFileCommand}" 
-                            BackgroundColor="#0078d4" Padding="10,0" HeightRequest="30" FontSize="12"/>
+                            IsEnabled="{Binding CanModifyRemoteFs}"
+                            BackgroundColor="#0078d4" TextColor="White" Padding="15,0" HeightRequest="36" />
+                    <Button Text="New Folder" Command="{Binding CreateRemoteFolderCommand}" 
+                            IsEnabled="{Binding CanModifyRemoteFs}"
+                            BackgroundColor="#607d8b" TextColor="White" Padding="10,0" HeightRequest="36" />
                     <Button Text="Refresh" Command="{Binding RefreshRemoteFilesCommand}" 
-                            BackgroundColor="#00897b" TextColor="White" Padding="15,0" HeightRequest="30" FontSize="12"/>
+                            IsEnabled="{Binding IsConnected}"
+                            BackgroundColor="#008080" TextColor="White" Padding="15,0" HeightRequest="36" />
                     <Button Text="Delete" Command="{Binding DeleteSelectedCommand}" 
-                            BackgroundColor="#c62828" TextColor="White" Padding="15,0" HeightRequest="30" FontSize="12"/>
+                            IsEnabled="{Binding CanModifyRemoteFs}"
+                            BackgroundColor="#c62828" TextColor="White" Padding="15,0" HeightRequest="36" />
                 </HorizontalStackLayout>
 
                 <Border Grid.Row="2" BackgroundColor="#252525" StrokeShape="RoundRectangle 8">
                     <CollectionView ItemsSource="{Binding RemoteFiles}">
                         <CollectionView.ItemTemplate>
                             <DataTemplate x:DataType="models:FileItem">
-                                <Grid ColumnDefinitions="40, 30, *, Auto, Auto" Padding="10,5">
+                                <Grid ColumnDefinitions="30, 25, *, Auto, Auto, Auto" Padding="10,5">
                                     <CheckBox IsChecked="{Binding IsSelected}" VerticalOptions="Center" 
                                               IsVisible="{Binding Name, Converter={StaticResource NotParentDirConverter}}"/>
                                     
@@ -125,15 +195,26 @@
                                             <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=NavigateRemoteCommand}" CommandParameter="{Binding .}"/>
                                         </Label.GestureRecognizers>
                                     </Label>
-
+ 
                                     <Label Grid.Column="3" Text="{Binding SizeDisplay}" TextColor="#888888" VerticalOptions="Center" FontSize="12" Margin="0,0,10,0"/>
+ 
+                                    <Button Grid.Column="4" Text="&#xE112;" FontFamily="Segoe MDL2 Assets" 
+                                            IsVisible="{Binding IsDirectory, Converter={StaticResource InverseBoolConverter}}"
+                                            Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=DownloadRemoteFileItemCommand}"
+                                            CommandParameter="{Binding .}"
+                                            IsEnabled="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=CanModifyRemoteFs}"
+                                            BackgroundColor="Transparent" TextColor="#4caf50"
+                                            Padding="0" WidthRequest="30" HeightRequest="25" FontSize="14"
+                                            ToolTipProperties.Text="Quick Download to PC"/>
 
-                                    <Button Grid.Column="4" Text="&#xE118;" FontFamily="Segoe MDL2 Assets" 
+                                    <Button Grid.Column="5" Text="&#xE118;" FontFamily="Segoe MDL2 Assets" 
                                             IsVisible="{Binding IsDirectory, Converter={StaticResource InverseBoolConverter}}"
                                             Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=DownloadFileCommand}"
                                             CommandParameter="{Binding .}"
+                                            IsEnabled="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=CanModifyRemoteFs}"
                                             BackgroundColor="Transparent" BorderColor="#444444" BorderWidth="1"
-                                            Padding="0" WidthRequest="30" HeightRequest="25" FontSize="12" TextColor="White"/>
+                                            Padding="0" WidthRequest="30" HeightRequest="25" FontSize="12" TextColor="White"
+                                            ToolTipProperties.Text="Save As..."/>
                                 </Grid>
                             </DataTemplate>
                         </CollectionView.ItemTemplate>

@@ -115,6 +115,12 @@ public class FsService
         _fatFs.DeleteDirectory(path, recursive);
     }
 
+    public void CreateDirectory(string path)
+    {
+        if (_fatFs == null) return;
+        _fatFs.CreateDirectory(path);
+    }
+
     public void Disconnect()
     {
         _fatFs?.Dispose();

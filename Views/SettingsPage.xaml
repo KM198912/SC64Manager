@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="NetGui.Views.SettingsPage"
+             BackgroundColor="#1a1a1a"
+             Title="Settings">
+    
+    <VerticalStackLayout Padding="30" Spacing="20">
+        <Label Text="Application Settings"
+               FontSize="24"
+               FontAttributes="Bold"
+               TextColor="White" />
+
+        <BoxView HeightRequest="1" BackgroundColor="#333333" />
+
+        <!-- functional settings -->
+        <VerticalStackLayout Spacing="10" Margin="0,20">
+            <Label Text="Default ROM Directory" TextColor="#aaaaaa" />
+            <Grid ColumnDefinitions="*, Auto">
+                <Border BackgroundColor="#252525" Stroke="#333333" Padding="10">
+                    <Label Text="{Binding DefaultRomPath}" TextColor="White" />
+                </Border>
+                <Button Grid.Column="1" Text="Browse" Command="{Binding BrowseLocalPathCommand}" Margin="10,0,0,0" />
+            </Grid>
+        </VerticalStackLayout>
+
+        <VerticalStackLayout Spacing="10">
+            <Label Text="Default Firmware Directory" TextColor="#aaaaaa" />
+            <Grid ColumnDefinitions="*, Auto">
+                <Border BackgroundColor="#252525" Stroke="#333333" Padding="10">
+                    <Label Text="{Binding DefaultFirmwarePath}" TextColor="White" />
+                </Border>
+                <Button Grid.Column="1" Text="Browse" Command="{Binding BrowseFirmwarePathCommand}" Margin="10,0,0,0" />
+            </Grid>
+        </VerticalStackLayout>
+
+        <VerticalStackLayout Spacing="10">
+            <Label Text="SC64 Deployer Executable" TextColor="#aaaaaa" />
+            <Grid ColumnDefinitions="*, Auto">
+                <Border BackgroundColor="#252525" Stroke="#333333" Padding="10">
+                    <Label Text="{Binding DeployerPath}" TextColor="White" />
+                </Border>
+                <Button Grid.Column="1" Text="Browse" Command="{Binding BrowseDeployerPathCommand}" Margin="10,0,0,0" />
+            </Grid>
+        </VerticalStackLayout>
+        
+        <Label Text="* Settings are saved automatically upon selection." 
+               FontSize="12" 
+               TextColor="#666666" 
+               Margin="0,30,0,0"/>
+
+    </VerticalStackLayout>
+</ContentPage>

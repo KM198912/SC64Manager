@@ -1,3 +1,4 @@
+using NetGui.Models;
 using NetGui.ViewModels;
 using System.ComponentModel;
 
@@ -28,6 +29,11 @@ public partial class MainPage : ContentPage
             _viewModel = vm;
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
         }
+    }
+
+    private async void OnLogoTapped(object? sender, EventArgs e)
+    {
+        await Launcher.Default.OpenAsync("https://summercart64.dev/");
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="NetGui.Views.AboutPage"
+             BackgroundColor="#1a1a1a"
+             Title="About SC64 Manager">
+    
+    <ScrollView>
+        <VerticalStackLayout Padding="30" Spacing="25" HorizontalOptions="Center">
+            
+            <!-- Official Logo -->
+            <Image Source="sc64.png" 
+                   HeightRequest="150" 
+                   WidthRequest="150" 
+                   HorizontalOptions="Center" 
+                   Margin="0,20,0,10"/>
+
+            <Label Text="SC64 Gui Manager"
+                   FontSize="28"
+                   FontAttributes="Bold"
+                   TextColor="White"
+                   HorizontalOptions="Center" />
+
+            <Label Text="Version 2.0.1 (Codename: SD Guardian)"
+                   FontSize="14"
+                   TextColor="#888888"
+                   HorizontalOptions="Center" />
+
+            <BoxView HeightRequest="1" BackgroundColor="#333333" WidthRequest="300" Margin="0,10" />
+
+            <Label Text="A modern, high-performance management tool for the SummerCart64."
+                   FontSize="16"
+                   TextColor="#cccccc"
+                   HorizontalTextAlignment="Center"
+                   MaximumWidthRequest="450" />
+
+            <!-- Credits -->
+            <VerticalStackLayout Spacing="5" Margin="0,15,0,0">
+                <Label Text="Developed by Kevin Meerts"
+                       FontSize="14"
+                       TextColor="White"
+                       HorizontalOptions="Center" />
+                <Label Text="[https://github.com/KM198912]"
+                       FontSize="12"
+                       TextColor="#0078d4"
+                       HorizontalOptions="Center" />
+            </VerticalStackLayout>
+
+            <!-- Links -->
+            <VerticalStackLayout Spacing="10" Margin="0,20,0,0">
+                <Button Text="Official SummerCart64 Website"
+                        Clicked="OnOfficialSiteClicked"
+                        BackgroundColor="#252525"
+                        TextColor="White"
+                        Padding="20,10" />
+                
+                <Button Text="Project GitHub Repository"
+                        Clicked="OnRepoClicked"
+                        BackgroundColor="#252525"
+                        TextColor="White"
+                        Padding="20,10" />
+            </VerticalStackLayout>
+
+            <Label Text="Hardware designed by Polprzewodnikowy"
+                   FontSize="12"
+                   TextColor="#888888"
+                   HorizontalOptions="Center"
+                   Margin="0,30,0,0" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

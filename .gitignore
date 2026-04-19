@@ -21,7 +21,10 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-
+Output/
+Output/*
+*.bat
+*.iss
 # Project Specific
 .gemini/
 *.log

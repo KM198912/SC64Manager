@@ -4,7 +4,25 @@
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:local="clr-namespace:NetGui"
+    xmlns:views="clr-namespace:NetGui.Views"
     Title="SC64 Gui Manager">
+
+    <Shell.MenuBarItems>
+        <MenuBarItem Text="File">
+            <MenuFlyoutItem Text="Upgrade Firmware..."
+                            Command="{Binding GoToUpdateCommand}" />
+            <MenuFlyoutSeparator />
+            <MenuFlyoutItem Text="Settings"
+                            Command="{Binding GoToSettingsCommand}" />
+            <MenuFlyoutSeparator />
+            <MenuFlyoutItem Text="Exit"
+                            Clicked="OnExitClicked" />
+        </MenuBarItem>
+        <MenuBarItem Text="Help">
+            <MenuFlyoutItem Text="About SC64 Manager"
+                            Command="{Binding GoToAboutCommand}" />
+        </MenuBarItem>
+    </Shell.MenuBarItems>
 
     <ShellContent
         Title="Home"

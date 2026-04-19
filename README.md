@@ -1,4 +1,4 @@
-# 🎮 SC64 Gui Manager v1.0
+# 🎮 SC64 Gui Manager v2.0.1
 
 ![Platform](https://img.shields.io/badge/Platform-Windows%2011%20%7C%2010-blue)
 ![Framework](https://img.shields.io/badge/Framework-.NET%2010%20MAUI-blueviolet)
@@ -18,7 +18,7 @@ The communication engine is optimized for high-speed serial transfers at **1,000
 ### 🛰️ Automated Firmware Management
 Stay up to date with the latest SummerCart64 features without leaving the app.
 - **Auto-Check**: Automatically compares your cartridge's firmware against the latest official releases on GitHub.
-- **One-Click Flashing**: If an update is available, a dedicated banner allows you to download and flash the new firmware directly to the cartridge SDRAM.
+- **One-Click Flashing**: If an update is available, a dedicated banner allows you to download and flash the new firmware directly to the cartridge SDRAM using the sc64deployer.exe downloaded at runtime, and downloading the latest firmware from GitHub.
 
 ### 🍱 Fluent Windows 11 UI
 - **Native Visuals**: Uses `Segoe MDL2 Assets` glyphs for a crisp, system-native look.
@@ -37,6 +37,7 @@ Stay up to date with the latest SummerCart64 features without leaving the app.
 ### Prerequisites
 - Windows 10/11
 - .NET 10 SDK
+- .NET 10 Maui Workload
 - SummerCart64 with USB connection
 
 ### Build from Source
@@ -81,7 +82,7 @@ Contributions are welcome! Please open an issue or submit a pull request for any
 - **SummerCart64**: [https://github.com/Polprzewodnikowy/SummerCart64](https://github.com/Polprzewodnikowy/SummerCart64)
 
 ## 📄 License
-MIT License - Copyright (c) 2026
+GPLv2 License. See: [https://www.gnu.org/licenses/old-licenses/gpl-2.0.html][License]
 
 ---
 

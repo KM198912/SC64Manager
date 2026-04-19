@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="NetGui.Views.UpdatePage"
+             Title="Hardware Deployment Console"
+             BackgroundColor="#050505">
+
+    <Grid RowDefinitions="Auto, *, Auto" Padding="15">
+        
+        <!-- Header -->
+        <HorizontalStackLayout Grid.Row="0" Spacing="10" Margin="0,0,0,15">
+            <Image Source="sc64.png" WidthRequest="24" HeightRequest="24" />
+            <Label Text="SC64 DEPLOYMENT CONSOLE" 
+                   VerticalOptions="Center"
+                   FontAttributes="Bold"
+                   TextColor="#00FF41"
+                   FontFamily="Consolas" />
+        </HorizontalStackLayout>
+
+        <!-- Terminal Output -->
+        <Border Grid.Row="1" 
+                Stroke="#333" 
+                StrokeThickness="1" 
+                BackgroundColor="#111">
+            <ScrollView x:Name="TermScroll">
+                <Label x:Name="TermOutput"
+                       TextColor="#00FF41"
+                       FontFamily="Consolas"
+                       FontSize="13"
+                       Padding="10"
+                       LineBreakMode="CharacterWrap" />
+            </ScrollView>
+        </Border>
+
+        <!-- Active Controls -->
+        <VerticalStackLayout Grid.Row="2" Spacing="10" Margin="0,15,0,0">
+            
+            <!-- Progress / Status -->
+            <Grid ColumnDefinitions="*, Auto">
+                <Label x:Name="StatusLabel" 
+                       Text="System Ready." 
+                       TextColor="#888" 
+                       FontFamily="Consolas" />
+                <ActivityIndicator x:Name="WorkingIndicator" 
+                                   Grid.Column="1" 
+                                   IsRunning="False" 
+                                   Color="#00FF41" 
+                                   Scale="0.8" />
+            </Grid>
+            
+            <ProgressBar x:Name="UpdateProgress" Progress="0" ProgressColor="#00FF41" />
+
+            <!-- Interaction Buttons -->
+            <HorizontalStackLayout Spacing="10" HorizontalOptions="Center">
+                <Button x:Name="BtnCheck" 
+                        Text="Check Updates" 
+                        Clicked="OnCheckUpdatesClicked"
+                        StyleClass="TerminalBtn" />
+                
+                <Button x:Name="BtnStart" 
+                        Text="Start Deployment" 
+                        Clicked="OnStartDeploymentClicked"
+                        IsEnabled="False"
+                        StyleClass="TerminalBtn" />
+
+                <Button x:Name="BtnConfirm" 
+                        Text="Confirm [y]" 
+                        Clicked="OnConfirmClicked"
+                        IsVisible="False"
+                        BackgroundColor="#c40027"
+                        TextColor="White"
+                        FontAttributes="Bold" />
+
+                <Button x:Name="BtnClose" 
+                        Text="Exit Console" 
+                        Clicked="OnCloseClicked" />
+            </HorizontalStackLayout>
+        </VerticalStackLayout>
+    </Grid>
+
+</ContentPage>

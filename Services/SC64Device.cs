@@ -171,6 +171,13 @@ public class SC64Device : IDisposable
         return !err;
     }
 
+    public byte GetCicStep()
+    {
+        var (err, data) = ExecuteCmd('?');
+        if (err || data == null || data.Length < 8) return 0; // 0 = Unavailable
+        return (byte)((data[7] >> 4) & 0x0F);
+    }
+
     public (bool success, uint status) SdInit()
     {
         var (err, data) = ExecuteCmd('i', 0, 1); // Op 1: Init

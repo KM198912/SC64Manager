@@ -27,9 +27,12 @@ public partial class MainViewModel : ObservableObject
     private readonly SC64Device _device;
     private readonly FsService _fs;
     private readonly HttpClient _httpClient;
+    private readonly SettingsService _settings;
+    private CancellationTokenSource? _pollingCts;
 
-    public MainViewModel()
+    public MainViewModel(SettingsService settings)
     {
+        _settings = settings;
         _device = new SC64Device();
         _fs = new FsService(_device);
         _httpClient = new HttpClient();
@@ -39,6 +42,9 @@ public partial class MainViewModel : ObservableObject
         LocalFiles = new ObservableCollection<FileItem>();
         RemoteFiles = new ObservableCollection<FileItem>();
         
+        SelectedPort = _settings.LastSelectedPort;
+        CurrentLocalPath = _settings.DefaultRomPath;
+
         _ = InitializeAsync();
     }
 
@@ -50,9 +56,21 @@ public partial class MainViewModel : ObservableObject
         {
             Log("Startup sequence beginning...");
             
-            await Task.Run(() => {
+            await Task.Run(async () => {
                 RefreshAvailablePorts();
                 RefreshLocalFiles();
+                
+                // Live Update Check
+                var updater = new UpdateService();
+                var (deployer, firmware) = await updater.GetLatestReleaseAssetsAsync();
+                if (firmware != null)
+                {
+                    MainThread.BeginInvokeOnMainThread(() => {
+                        LatestVersionTag = firmware.Name.Replace("sc64-firmware-", "").Replace(".bin", "");
+                        // We do NOT set UpdateAvailable = true here. 
+                        // It stays hidden until CheckForUpdates() is called with real hardware data.
+                    });
+                }
             });
 
             Log("Ready for hardware connection.");
@@ -72,9 +90,20 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusColor))]
     [NotifyPropertyChangedFor(nameof(ConnectionButtonText))]
+    [NotifyPropertyChangedFor(nameof(StatusTextN64))]
     public partial bool IsConnected { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatusTextN64))]
+    [NotifyPropertyChangedFor(nameof(CanModifyRemoteFs))]
+    public partial bool IsN64PoweredOn { get; set; }
+
+    public string StatusTextN64 => IsConnected ? (IsN64PoweredOn ? "N64: ON" : "N64: OFF") : "";
+
+    public bool CanModifyRemoteFs => IsConnected && !IsBusy && !IsN64PoweredOn;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanModifyRemoteFs))]
     public partial bool IsBusy { get; set; }
 
     [ObservableProperty]
@@ -93,6 +122,18 @@ public partial class MainViewModel : ObservableObject
     public partial string CurrentRemotePath { get; set; } = "/";
 
     [ObservableProperty]
+    public partial string CurrentLocalPath { get; set; } = string.Empty;
+
+    public string DefaultFirmwarePath => _settings.DefaultFirmwarePath;
+    public string DefaultRomPath => _settings.DefaultRomPath;
+    
+    public string DeployerPath 
+    {
+        get => _settings.DeployerPath;
+        set { _settings.DeployerPath = value; OnPropertyChanged(); }
+    }
+
+    [ObservableProperty]
     public partial bool UpdateAvailable { get; set; }
 
     [ObservableProperty]
@@ -105,7 +146,7 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<FileItem> LocalFiles { get; } 
     public ObservableCollection<FileItem> RemoteFiles { get; } 
 
-    private void Log(string message)
+    public void Log(string message)
     {
         // UI Log (Visible to user)
         MainThread.BeginInvokeOnMainThread(() => {
@@ -133,20 +174,147 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task GoToAbout() => await Shell.Current.GoToAsync("AboutPage");
+
+    [RelayCommand]
+    private async Task OpenDebugConsole()
+    {
+        string? exePath = DeployerPath;
+
+        if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath))
+        {
+            // Auto-Download Fallback
+            IsBusy = true;
+            ProgressValue = 0;
+            ProgressText = "Fetching Debugger Utility...";
+            Log("MISSING: sc64deployer.exe not found. Attempting auto-download...");
+            
+            try
+            {
+                var updater = new UpdateService();
+                var (deployerAsset, _) = await updater.GetLatestReleaseAssetsAsync();
+                if (deployerAsset == null) throw new Exception("Could not find deployer asset on GitHub.");
+
+                Log("Downloading official deployer package...");
+                string targetDir = Path.Combine(FileSystem.CacheDirectory, "Updates", "deployer");
+                exePath = await updater.DownloadAndExtractAsync(deployerAsset!, targetDir);
+
+                if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) throw new Exception("Extraction failed.");
+                
+                DeployerPath = exePath;
+                Log("SUCCESS: sc64deployer.exe localized and ready.");
+            }
+            catch (Exception ex)
+            {
+                Log($"Download Failed: {ex.Message}");
+                if (Application.Current?.Windows.Count > 0)
+                {
+                    await Application.Current.Windows[0].Page!.DisplayAlertAsync("Integration Error", $"Could not find or download sc64deployer.exe: {ex.Message}", "OK");
+                }
+                return;
+            }
+            finally { IsBusy = false; }
+        }
+
+        bool wasConnected = IsConnected;
+        string port = SelectedPort;
+
+        if (wasConnected)
+        {
+            Log("Handoff: Releasing COM port for Debug Console...");
+            Disconnect();
+            await Task.Delay(500); // Wait for OS to fully release the handle
+        }
+
+        try
+        {
+            Log($"Launching external terminal: {exePath} --port serial://{port} debug");
+            
+            var process = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = $"/k \"\"{exePath}\" --port serial://{port} debug\"",
+                    UseShellExecute = true,
+                    WorkingDirectory = Path.GetDirectoryName(exePath)
+                },
+                EnableRaisingEvents = true
+            };
+
+            process.Exited += async (s, e) => {
+                Log("External Debug Console closed.");
+                if (wasConnected)
+                {
+                    Log("Attempting to reclaim COM port...");
+                    await MainThread.InvokeOnMainThreadAsync(async () => {
+                        await ToggleConnection();
+                    });
+                }
+            };
+
+            process.Start();
+        }
+        catch (Exception ex)
+        {
+            Log($"Process Start Error: {ex.Message}");
+            if (wasConnected) await ToggleConnection();
+        }
+    }
+
+    [RelayCommand]
+    private async Task GoToSettings() => await Shell.Current.GoToAsync("SettingsPage");
+
+    [RelayCommand]
+    private async Task GoToUpdate() => await Shell.Current.GoToAsync("UpdatePage");
+
+    [RelayCommand]
     private void RefreshAvailablePorts()
     {
         try
         {
             var ports = _device.GetAvailablePorts();
             MainThread.BeginInvokeOnMainThread(() => {
+                string current = SelectedPort;
                 AvailablePorts.Clear();
                 foreach (var p in ports) AvailablePorts.Add(p);
-                if (AvailablePorts.Count > 0 && string.IsNullOrEmpty(SelectedPort)) SelectedPort = AvailablePorts[0];
+                
+                if (AvailablePorts.Contains(current)) SelectedPort = current;
+                else if (AvailablePorts.Count > 0) SelectedPort = AvailablePorts[0];
             });
         }
         catch (Exception ex)
         {
             Log($"Port Scan Error: {ex.Message}");
+        }
+    }
+
+    partial void OnSelectedPortChanged(string value)
+    {
+        if (_settings != null) _settings.LastSelectedPort = value;
+    }
+
+    partial void OnCurrentLocalPathChanged(string value)
+    {
+        RefreshLocalFiles();
+    }
+
+    [RelayCommand]
+    private void Disconnect()
+    {
+        try
+        {
+            _pollingCts?.Cancel();
+            _fs.Disconnect();
+            _device.Disconnect();
+            IsConnected = false;
+            IsN64PoweredOn = false;
+            OnPropertyChanged(nameof(IsConnected));
+            Log("DISCONNECTED: Hardware bridge released.");
+        }
+        catch (Exception ex)
+        {
+            Log($"Disconnect Error: {ex.Message}");
         }
     }
 
@@ -191,6 +359,13 @@ public partial class MainViewModel : ObservableObject
                     var version = _device.GetVersion();
                     Log($"Cart Version: {version}");
 
+                    // Boot-time Power Check (Wait for FPGA stability)
+                    await Task.Delay(200);
+                    Log("Detecting console power status...");
+                    byte step = _device.GetCicStep();
+                    IsN64PoweredOn = step > 1;
+                    if (IsN64PoweredOn) Log("⚠️ ALERT: N64 is already powered ON.");
+
                     Log("Initializing protocol state...");
                     _device.StateReset();
                     
@@ -205,6 +380,10 @@ public partial class MainViewModel : ObservableObject
                             StatusText = $"Connected ({version})";
                             CurrentRemotePath = "/";
                             
+                            Log("Starting hardware status polling...");
+                            _pollingCts = new CancellationTokenSource();
+                            _ = StartPollingLoop(_pollingCts.Token);
+
                             Log("Scanning initial directory tree...");
                             await RefreshRemoteFilesInternal();
                             
@@ -236,11 +415,13 @@ public partial class MainViewModel : ObservableObject
         }
         else
         {
+            _pollingCts?.Cancel();
             _fs.Disconnect();
             _device.Disconnect();
             
             MainThread.BeginInvokeOnMainThread(() => {
                 IsConnected = false;
+                IsN64PoweredOn = false;
                 UpdateAvailable = false;
                 IsUpToDate = false;
                 StatusText = "Disconnected";
@@ -248,6 +429,35 @@ public partial class MainViewModel : ObservableObject
             });
             
             Log("Disconnected.");
+        }
+    }
+
+    private async Task StartPollingLoop(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                // Only poll if not busy with another command (the Lock handles this but it's cleaner to check)
+                if (IsConnected && !IsBusy)
+                {
+                    byte step = _device.GetCicStep();
+                    bool poweredOn = step > 1; // 0=Unavailable, 1=PowerOff, Others=On
+                    
+                    if (poweredOn != IsN64PoweredOn)
+                    {
+                        MainThread.BeginInvokeOnMainThread(() => {
+                            IsN64PoweredOn = poweredOn;
+                            if (poweredOn) Log("STATUS: N64 console powered ON.");
+                            else Log("STATUS: N64 console powered OFF.");
+                        });
+                    }
+                }
+            }
+            catch { }
+            
+            try { await Task.Delay(2000, token); }
+            catch (OperationCanceledException) { break; }
         }
     }
 
@@ -354,13 +564,9 @@ public partial class MainViewModel : ObservableObject
         {
             var parts = CurrentRemotePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length > 0)
-            {
                 CurrentRemotePath = "/" + string.Join("/", parts.Take(parts.Length - 1));
-            }
             else
-            {
                 CurrentRemotePath = "/";
-            }
         }
         else
         {
@@ -368,6 +574,61 @@ public partial class MainViewModel : ObservableObject
         }
 
         await RefreshRemoteFiles();
+    }
+
+    [RelayCommand]
+    private void NavigateLocal(FileItem item)
+    {
+        if (!item.IsDirectory) return;
+
+        if (item.Name == "..")
+        {
+            var parent = Directory.GetParent(CurrentLocalPath);
+            if (parent != null) CurrentLocalPath = parent.FullName;
+        }
+        else
+        {
+            CurrentLocalPath = Path.Combine(CurrentLocalPath, item.Name);
+        }
+    }
+
+    [RelayCommand]
+    private async Task BrowseLocalPath()
+    {
+        var result = await FolderPicker.Default.PickAsync(CancellationToken.None);
+        if (result.IsSuccessful)
+        {
+            _settings.DefaultRomPath = result.Folder.Path;
+            CurrentLocalPath = result.Folder.Path;
+            OnPropertyChanged(nameof(DefaultRomPath));
+        }
+    }
+
+    [RelayCommand]
+    private async Task BrowseFirmwarePath()
+    {
+        var result = await FolderPicker.Default.PickAsync(CancellationToken.None);
+        if (result.IsSuccessful)
+        {
+            _settings.DefaultFirmwarePath = result.Folder.Path;
+            OnPropertyChanged(nameof(DefaultFirmwarePath));
+        }
+    }
+
+    [RelayCommand]
+    private async Task BrowseDeployerPath()
+    {
+        var result = await FilePicker.Default.PickAsync(new PickOptions {
+            PickerTitle = "Select sc64deployer.exe",
+            FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>> {
+                { DevicePlatform.WinUI, new[] { ".exe" } }
+            })
+        });
+
+        if (result != null)
+        {
+            DeployerPath = result.FullPath;
+        }
     }
 
     [RelayCommand]
@@ -404,25 +665,49 @@ public partial class MainViewModel : ObservableObject
     private async Task UploadFile()
     {
         if (!IsConnected || IsBusy) return;
+        if (IsN64PoweredOn)
+        {
+            Log("DENIED: SD Modifications are blocked while N64 is powered ON.");
+            await Application.Current!.Windows[0].Page!.DisplayAlertAsync("Operation Blocked", "The SD card is locked by the N64. Please power off the console to upload files.", "OK");
+            return;
+        }
+
         try
         {
             var result = await FilePicker.Default.PickAsync();
             if (result == null) return;
-            IsBusy = true;
+            await UploadFileInternal(result.FullPath);
+        }
+        catch (Exception ex) { Log($"Upload Error: {ex.Message}"); }
+        finally { IsBusy = false; }
+    }
+
+    private async Task UploadFileInternal(string localFullPath)
+    {
+        IsBusy = true;
+        try
+        {
             ProgressValue = 0;
             ProgressText = "Direct Sector Upload...";
-            var remotePath = (CurrentRemotePath.TrimEnd('/') + "/" + result.FileName);
-            Log($"Uploading: {result.FileName}...");
+            var fileName = Path.GetFileName(localFullPath);
+            var remotePath = (CurrentRemotePath.TrimEnd('/') + "/" + fileName);
+            Log($"Uploading: {fileName}...");
             await Task.Run(() => {
-                using var localStream = File.OpenRead(result.FullPath);
+                using var localStream = File.OpenRead(localFullPath);
                 using var remoteStream = _fs.OpenFile(remotePath, FileMode.Create);
                 CopyStreamWithProgress(localStream, remoteStream, localStream.Length);
             });
             Log("Upload complete.");
-            await RefreshRemoteFiles();
+            await RefreshRemoteFilesInternal();
         }
-        catch (Exception ex) { Log($"Upload Error: {ex.Message}"); }
-        finally { IsBusy = false; }
+        catch (Exception ex)
+        {
+            Log($"Internal Upload Error: {ex.Message}");
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
 
     [RelayCommand]
@@ -436,6 +721,7 @@ public partial class MainViewModel : ObservableObject
             ProgressText = "Locating Remote File...";
             var remotePath = (CurrentRemotePath.TrimEnd('/') + "/" + item.Name);
             Log($"Preparing download: {item.Name}...");
+            
             using (var cartStream = _fs.OpenFile(remotePath, FileMode.Open))
             {
                 using (var progressStream = new ProgressStream(cartStream, cartStream.Length, (p, r, t) => {
@@ -452,11 +738,49 @@ public partial class MainViewModel : ObservableObject
         finally { IsBusy = false; }
     }
 
+    private async Task DownloadFileInternal(FileItem item, string localTargetFolder)
+    {
+        if (!IsConnected || IsBusy || item.IsDirectory) return;
+        IsBusy = true;
+        try
+        {
+            ProgressValue = 0;
+            ProgressText = "Locating Remote File...";
+            var remotePath = (CurrentRemotePath.TrimEnd('/') + "/" + item.Name);
+            var localTargetPath = Path.Combine(localTargetFolder, item.Name);
+            
+            Log($"Downloading to: {localTargetFolder}...");
+            await Task.Run(() => {
+                using var cartStream = _fs.OpenFile(remotePath, FileMode.Open);
+                using var localStream = File.OpenWrite(localTargetPath);
+                CopyStreamWithProgress(cartStream, localStream, cartStream.Length);
+            });
+            
+            Log($"Download complete: {item.Name}");
+            RefreshLocalFiles();
+        }
+        catch (Exception ex)
+        {
+            Log($"Internal Download Error: {ex.Message}");
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     [RelayCommand]
     private async Task DeleteSelected()
     {
         var selected = RemoteFiles.Where(f => f.IsSelected && f.Name != "..").ToList();
         if (selected.Count == 0) return;
+
+        if (IsN64PoweredOn)
+        {
+            Log("DENIED: SD Modifications are blocked while N64 is powered ON.");
+            await Application.Current!.Windows[0].Page!.DisplayAlertAsync("Operation Blocked", "The SD card is locked by the N64. Please power off the console to delete files.", "OK");
+            return;
+        }
 
         bool confirm = await Application.Current!.Windows[0].Page!.DisplayAlertAsync(
             "Confirm Delete", 
@@ -487,10 +811,58 @@ public partial class MainViewModel : ObservableObject
                 }
             });
             Log("Batch deletion complete.");
-            await RefreshRemoteFiles();
+            await RefreshRemoteFilesInternal();
         }
         catch (Exception ex) { Log($"Delete Error: {ex.Message}"); }
         finally { IsBusy = false; }
+    }
+
+    [RelayCommand]
+    private async Task CreateRemoteFolder()
+    {
+        if (!IsConnected || IsBusy) return;
+
+        if (IsN64PoweredOn)
+        {
+            Log("DENIED: SD Modifications are blocked while N64 is powered ON.");
+            await Application.Current!.Windows[0].Page!.DisplayAlertAsync("Operation Blocked", "The SD card is locked by the N64. Please power off the console to create folders.", "OK");
+            return;
+        }
+
+        var name = await Application.Current!.Windows[0].Page!.DisplayPromptAsync(
+            "New Folder", "Enter folder name:", "Create", "Cancel", "New Folder");
+
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        IsBusy = true;
+        try
+        {
+            var path = CurrentRemotePath.TrimEnd('/') + "/" + name;
+            Log($"Creating folder: {name}...");
+            await Task.Run(() => _fs.CreateDirectory(path));
+            await RefreshRemoteFilesInternal();
+            Log("Folder created.");
+        }
+        catch (Exception ex) { Log($"Create Folder Error: {ex.Message}"); }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand]
+    private async Task UploadLocalFileItem(FileItem item)
+    {
+        if (!IsConnected || IsBusy || item.IsDirectory) return;
+        var localPath = Path.Combine(CurrentLocalPath, item.Name);
+        if (!File.Exists(localPath)) return;
+        await UploadFileInternal(localPath);
+    }
+
+    [RelayCommand]
+    private async Task DownloadRemoteFileItem(FileItem item)
+    {
+        if (!IsConnected || IsBusy || item.IsDirectory) return;
+        // Direct download to Current PC folder
+        await DownloadFileInternal(item, CurrentLocalPath);
+        RefreshLocalFiles();
     }
 
     private void CopyStreamWithProgress(Stream source, Stream destination, long totalBytes)
@@ -507,24 +879,48 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
+    [RelayCommand]
     private void RefreshLocalFiles()
     {
         try
         {
-            var dir = Directory.GetCurrentDirectory();
-            var entries = Directory.GetFileSystemEntries(dir).OrderBy(x => Directory.Exists(x) ? 0 : 1);
+            var dir = CurrentLocalPath;
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+            {
+                dir = Directory.GetCurrentDirectory();
+            }
+
+            var entries = Directory.GetFileSystemEntries(dir)
+                .OrderBy(x => Directory.Exists(x) ? 0 : 1)
+                .ThenBy(x => x)
+                .ToList();
             
             MainThread.BeginInvokeOnMainThread(() => {
                 LocalFiles.Clear();
+
+                // Add back button if not at drive root
+                var parent = Directory.GetParent(dir);
+                if (parent != null)
+                {
+                    LocalFiles.Add(new FileItem { Name = "..", IsDirectory = true, SizeDisplay = "<UP>" });
+                }
+
                 foreach (var f in entries)
                 {
                     var isDir = Directory.Exists(f);
                     var name = Path.GetFileName(f);
-                    LocalFiles.Add(new FileItem { Name = name, IsDirectory = isDir, SizeDisplay = isDir ? "<DIR>" : FormatSize(new FileInfo(f).Length) });
+                    LocalFiles.Add(new FileItem { 
+                        Name = name, 
+                        IsDirectory = isDir, 
+                        SizeDisplay = isDir ? "<DIR>" : FormatSize(new FileInfo(f).Length) 
+                    });
                 }
             });
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Log($"Local Scan Error: {ex.Message}");
+        }
     }
 
     private static string FormatSize(long size)
