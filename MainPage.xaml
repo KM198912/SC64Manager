@@ -179,7 +179,7 @@
                     <CollectionView ItemsSource="{Binding RemoteFiles}">
                         <CollectionView.ItemTemplate>
                             <DataTemplate x:DataType="models:FileItem">
-                                <Grid ColumnDefinitions="30, 25, *, Auto, Auto, Auto" Padding="10,5">
+                                <Grid ColumnDefinitions="30, 25, *, Auto, Auto, Auto, Auto" Padding="10,5">
                                     <CheckBox IsChecked="{Binding IsSelected}" VerticalOptions="Center" 
                                               IsVisible="{Binding Name, Converter={StaticResource NotParentDirConverter}}"/>
                                     
@@ -198,7 +198,15 @@
  
                                     <Label Grid.Column="3" Text="{Binding SizeDisplay}" TextColor="#888888" VerticalOptions="Center" FontSize="12" Margin="0,0,10,0"/>
  
-                                    <Button Grid.Column="4" Text="&#xE112;" FontFamily="Segoe MDL2 Assets" 
+                                    <Button Grid.Column="4" Text="&#xE13E;" FontFamily="Segoe MDL2 Assets" 
+                                            Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=RenameRemoteFileCommand}"
+                                            CommandParameter="{Binding .}"
+                                            IsEnabled="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=CanModifyRemoteFs}"
+                                            BackgroundColor="Transparent" TextColor="#FFD700"
+                                            Padding="0" WidthRequest="30" HeightRequest="25" FontSize="14"
+                                            ToolTipProperties.Text="Rename"/>
+ 
+                                    <Button Grid.Column="5" Text="&#xE112;" FontFamily="Segoe MDL2 Assets" 
                                             IsVisible="{Binding IsDirectory, Converter={StaticResource InverseBoolConverter}}"
                                             Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=DownloadRemoteFileItemCommand}"
                                             CommandParameter="{Binding .}"
@@ -207,7 +215,7 @@
                                             Padding="0" WidthRequest="30" HeightRequest="25" FontSize="14"
                                             ToolTipProperties.Text="Quick Download to PC"/>
 
-                                    <Button Grid.Column="5" Text="&#xE118;" FontFamily="Segoe MDL2 Assets" 
+                                    <Button Grid.Column="6" Text="&#xE118;" FontFamily="Segoe MDL2 Assets" 
                                             IsVisible="{Binding IsDirectory, Converter={StaticResource InverseBoolConverter}}"
                                             Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=DownloadFileCommand}"
                                             CommandParameter="{Binding .}"
@@ -249,12 +257,12 @@
                 <Border BackgroundColor="#2a2a2a" Padding="40" StrokeShape="RoundRectangle 12" StrokeThickness="1" Stroke="#444444">
                     <VerticalStackLayout Spacing="15" WidthRequest="400">
                         <Label Text="Hardware Operation in Progress" FontSize="18" FontAttributes="Bold" TextColor="White" HorizontalOptions="Center"/>
-                        <Label Text="{Binding ProgressText}" FontSize="14" TextColor="#aaaaaa" HorizontalOptions="Center" Margin="0,0,0,10"/>
+                        <Label Text="{Binding CurrentFileName}" FontSize="15" TextColor="#FFD700" FontAttributes="Italic" HorizontalOptions="Center" Margin="0,0,0,5"/>
+                        <Label Text="{Binding ProgressText}" FontSize="13" TextColor="#aaaaaa" HorizontalOptions="Center" Margin="0,0,0,10"/>
                         
                         <ProgressBar Progress="{Binding ProgressValue}" HeightRequest="12" ProgressColor="#0078d4" BackgroundColor="#1a1a1a"/>
                         
                         <Grid ColumnDefinitions="*, *">
-                            <Label Text="{Binding ProgressText}" FontSize="12" TextColor="#888888" HorizontalOptions="Start"/>
                             <Label Grid.Column="1" Text="{Binding ProgressValue, StringFormat='{0:P0}'}" FontSize="12" TextColor="#0078d4" FontAttributes="Bold" HorizontalOptions="End"/>
                         </Grid>
                     </VerticalStackLayout>

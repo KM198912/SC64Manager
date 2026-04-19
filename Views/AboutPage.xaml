@@ -21,7 +21,7 @@
                    TextColor="White"
                    HorizontalOptions="Center" />
 
-            <Label Text="Version 2.0.1 (Codename: SD Guardian)"
+            <Label Text="Version 2.0.2 (Codename: Guardian of the Editors)"
                    FontSize="14"
                    TextColor="#888888"
                    HorizontalOptions="Center" />

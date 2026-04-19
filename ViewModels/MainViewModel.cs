@@ -116,6 +116,9 @@ public partial class MainViewModel : ObservableObject
     public partial string ProgressText { get; set; } = string.Empty;
 
     [ObservableProperty]
+    public partial string CurrentFileName { get; set; } = string.Empty;
+
+    [ObservableProperty]
     public partial string SelectedPort { get; set; } = string.Empty;
 
     [ObservableProperty]
@@ -647,11 +650,16 @@ public partial class MainViewModel : ObservableObject
         try
         {
             var files = await Task.Run(() => _fs.ListDir(CurrentRemotePath));
-            var filteredFiles = files.Where(f => !HiddenItems.Contains(f.Name)).ToList();
+            var sortedFiles = files
+                .Where(f => !HiddenItems.Contains(f.Name))
+                .OrderBy(f => f.Name == ".." ? 0 : 1)
+                .ThenBy(f => f.IsDirectory ? 0 : 1)
+                .ThenBy(f => f.Name)
+                .ToList();
             
             MainThread.BeginInvokeOnMainThread(() => {
                 RemoteFiles.Clear();
-                foreach (var f in filteredFiles) RemoteFiles.Add(f);
+                foreach (var f in sortedFiles) RemoteFiles.Add(f);
                 Log("Remote UI Refresh complete.");
             });
         }
@@ -688,6 +696,7 @@ public partial class MainViewModel : ObservableObject
         try
         {
             ProgressValue = 0;
+            CurrentFileName = Path.GetFileName(localFullPath);
             ProgressText = "Direct Sector Upload...";
             var fileName = Path.GetFileName(localFullPath);
             var remotePath = (CurrentRemotePath.TrimEnd('/') + "/" + fileName);
@@ -706,6 +715,7 @@ public partial class MainViewModel : ObservableObject
         }
         finally
         {
+            CurrentFileName = string.Empty;
             IsBusy = false;
         }
     }
@@ -718,6 +728,7 @@ public partial class MainViewModel : ObservableObject
         {
             IsBusy = true;
             ProgressValue = 0;
+            CurrentFileName = item.Name;
             ProgressText = "Locating Remote File...";
             var remotePath = (CurrentRemotePath.TrimEnd('/') + "/" + item.Name);
             Log($"Preparing download: {item.Name}...");
@@ -735,7 +746,10 @@ public partial class MainViewModel : ObservableObject
             }
         }
         catch (Exception ex) { Log($"Download Error: {ex.Message}"); }
-        finally { IsBusy = false; }
+        finally { 
+            CurrentFileName = string.Empty;
+            IsBusy = false; 
+        }
     }
 
     private async Task DownloadFileInternal(FileItem item, string localTargetFolder)
@@ -745,6 +759,7 @@ public partial class MainViewModel : ObservableObject
         try
         {
             ProgressValue = 0;
+            CurrentFileName = item.Name;
             ProgressText = "Locating Remote File...";
             var remotePath = (CurrentRemotePath.TrimEnd('/') + "/" + item.Name);
             var localTargetPath = Path.Combine(localTargetFolder, item.Name);
@@ -759,13 +774,10 @@ public partial class MainViewModel : ObservableObject
             Log($"Download complete: {item.Name}");
             RefreshLocalFiles();
         }
-        catch (Exception ex)
-        {
-            Log($"Internal Download Error: {ex.Message}");
-        }
         finally
         {
             IsBusy = false;
+            CurrentFileName = string.Empty;
         }
     }
 
@@ -791,6 +803,7 @@ public partial class MainViewModel : ObservableObject
 
         IsBusy = true;
         ProgressValue = 0;
+        CurrentFileName = "Selected Items";
         ProgressText = "Deleting Files...";
 
         try
@@ -844,6 +857,38 @@ public partial class MainViewModel : ObservableObject
             Log("Folder created.");
         }
         catch (Exception ex) { Log($"Create Folder Error: {ex.Message}"); }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand]
+    private async Task RenameRemoteFile(FileItem item)
+    {
+        if (!IsConnected || IsBusy || item.Name == "..") return;
+
+        if (IsN64PoweredOn)
+        {
+            Log("DENIED: SD Modifications are blocked while N64 is powered ON.");
+            await Application.Current!.Windows[0].Page!.DisplayAlertAsync("Operation Blocked", "The SD card is locked by the N64. Please power off the console to rename files.", "OK");
+            return;
+        }
+
+        var newName = await Application.Current!.Windows[0].Page!.DisplayPromptAsync(
+            "Rename", $"Enter new name for {item.Name}:", "Rename", "Cancel", initialValue: item.Name);
+
+        if (string.IsNullOrWhiteSpace(newName) || newName == item.Name) return;
+
+        IsBusy = true;
+        try
+        {
+            var oldPath = CurrentRemotePath.TrimEnd('/') + "/" + item.Name;
+            var newPath = CurrentRemotePath.TrimEnd('/') + "/" + newName;
+            
+            Log($"Renaming: {item.Name} -> {newName}...");
+            await Task.Run(() => _fs.Rename(oldPath, newPath, item.IsDirectory));
+            await RefreshRemoteFilesInternal();
+            Log("Rename complete.");
+        }
+        catch (Exception ex) { Log($"Rename Error: {ex.Message}"); }
         finally { IsBusy = false; }
     }
 

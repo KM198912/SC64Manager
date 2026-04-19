@@ -83,6 +83,9 @@ Contributions are welcome! Please open an issue or submit a pull request for any
 
 ## 📄 License
 GPLv2 License. See: [https://www.gnu.org/licenses/old-licenses/gpl-2.0.html][License]
+Since the original project is licensed under GPLv2, this project is also licensed under GPLv2.
+And since i use their Logo in the project, i have to Use the same License.
+However if it went by my choice, i would have used the WTFPL License but it is what it is :P 
 
 ---
 

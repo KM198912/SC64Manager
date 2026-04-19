@@ -115,6 +115,15 @@ public class FsService
         _fatFs.DeleteDirectory(path, recursive);
     }
 
+    public void Rename(string oldPath, string newPath, bool isDirectory)
+    {
+        if (_fatFs == null) return;
+        if (isDirectory)
+            _fatFs.MoveDirectory(oldPath, newPath);
+        else
+            _fatFs.MoveFile(oldPath, newPath);
+    }
+
     public void CreateDirectory(string path)
     {
         if (_fatFs == null) return;
