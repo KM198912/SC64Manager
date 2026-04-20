@@ -23,7 +23,7 @@
                    TextColor="White"
                    HorizontalOptions="Center" />
 
-            <Label Text="Version 2.1.0 (Codename: Hardware Sentinel)"
+            <Label Text="Version 2.2.0 (Codename: The Artistic Update)"
                    FontSize="14"
                    TextColor="#888888"
                    HorizontalOptions="Center" />
