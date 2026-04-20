@@ -18,7 +18,7 @@ The communication engine is optimized for high-speed serial transfers at **1,000
 - **RTC Sync**: Sync the RTC of the SC64 to the current time.
 - **Set Menu Background Music**: Set the background music of the SC64 menu.
 - **Boxart and Description Scraper**: Scrapes boxart and descriptions for games from the internet, and saves them to the SD card in the correct format for the SC64 Menu.
-- **Pretty Titles**: Gui Generates a title.txt file, which is used by the SC64 Menu to display the title of the game instead of the filename. (Needs Modded sc64menu.bin) [https://github.com/KM198912/SC64Menu][https://github.com/KM198912/SC64Menu]
+- **Pretty Titles**: Gui Generates a title.txt file, which is used by the SC64 Menu to display the title of the game instead of the filename. (Needs Modded sc64menu.bin) [KM198912/SC64Menu](https://github.com/KM198912/SC64Menu)
 - **SD Card Management**: Decoupled SD management from Connection Status
 - **Hardware Page**: Added a page to view the hardware information of the SC64, like Voltage, Temperature, CIC Handshake
 
@@ -90,7 +90,7 @@ Contributions are welcome! Please open an issue or submit a pull request for any
 - **SummerCart64**: [https://github.com/Polprzewodnikowy/SummerCart64](https://github.com/Polprzewodnikowy/SummerCart64)
 
 ## 📄 License
-GPLv2 License. See: [https://www.gnu.org/licenses/old-licenses/gpl-2.0.html][License]
+GPLv2 License. See: [GNU GPL v2.0](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html)
 Since the original project is licensed under GPLv2, this project is also licensed under GPLv2.
 And since i use their Logo in the project, i have to Use the same License.
 However if it went by my choice, i would have used the WTFPL License but it is what it is :P 
