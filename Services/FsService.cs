@@ -10,6 +10,7 @@ public class FsService
     private readonly SC64Device _device;
     private FatFileSystem? _fatFs;
     private SC64Stream? _stream;
+    private readonly SemaphoreSlim _fsLock = new(1, 1);
 
     public FsService(SC64Device device)
     {
@@ -18,6 +19,7 @@ public class FsService
 
     public bool Mount(Action<string> log)
     {
+        _fsLock.Wait();
         try
         {
             log("FS: Power cycling SD interface...");
@@ -33,7 +35,7 @@ public class FsService
             }
 
             log("FS: Creating hardware stream (0x03F00000)...");
-            _stream = new SC64Stream(_device, 128L * 1024 * 1024 * 1024); // Use large bounds, DiscUtils will handle real bounds
+            _stream = new SC64Stream(_device, 128L * 1024 * 1024 * 1024); // Use large bounds
             
             log("FS: Scanning for BIOS/MBR partitions...");
             var partitionTable = new BiosPartitionTable(_stream);
@@ -57,6 +59,7 @@ public class FsService
             log($"FS CRITICAL: {ex.Message}");
             return false;
         }
+        finally { _fsLock.Release(); }
     }
 
     public List<FileItem> ListDir(string path)
@@ -64,6 +67,7 @@ public class FsService
         var items = new List<FileItem>();
         if (_fatFs == null) return items;
 
+        _fsLock.Wait();
         try
         {
             if (path != "/")
@@ -71,7 +75,7 @@ public class FsService
                 items.Add(new FileItem { Name = "..", IsDirectory = true, SizeDisplay = "<UP>" });
             }
 
-            foreach (var dir in _fatFs.GetDirectories(path))
+            foreach (var dir in _fatFs.GetDirectories(path).ToList())
             {
                 items.Add(new FileItem
                 {
@@ -81,7 +85,7 @@ public class FsService
                 });
             }
 
-            foreach (var file in _fatFs.GetFiles(path))
+            foreach (var file in _fatFs.GetFiles(path).ToList())
             {
                 var info = _fatFs.GetFileInfo(file);
                 items.Add(new FileItem
@@ -93,48 +97,65 @@ public class FsService
             }
         }
         catch { }
+        finally { _fsLock.Release(); }
 
         return items;
     }
 
+    // Wrap remaining operations
     public Stream OpenFile(string path, FileMode mode)
     {
-        if (_fatFs == null) throw new InvalidOperationException("Not mounted");
-        return _fatFs.OpenFile(path, mode);
+        _fsLock.Wait();
+        try
+        {
+            if (_fatFs == null) throw new InvalidOperationException("Not mounted");
+            return _fatFs.OpenFile(path, mode);
+        }
+        finally { _fsLock.Release(); }
     }
 
     public void DeleteFile(string path)
     {
-        if (_fatFs == null) return;
-        _fatFs.DeleteFile(path);
+        _fsLock.Wait();
+        try { _fatFs?.DeleteFile(path); } finally { _fsLock.Release(); }
     }
 
     public void DeleteDirectory(string path, bool recursive = true)
     {
-        if (_fatFs == null) return;
-        _fatFs.DeleteDirectory(path, recursive);
+        _fsLock.Wait();
+        try { _fatFs?.DeleteDirectory(path, recursive); } finally { _fsLock.Release(); }
     }
 
     public void Rename(string oldPath, string newPath, bool isDirectory)
     {
-        if (_fatFs == null) return;
-        if (isDirectory)
-            _fatFs.MoveDirectory(oldPath, newPath);
-        else
-            _fatFs.MoveFile(oldPath, newPath);
+        _fsLock.Wait();
+        try
+        {
+            if (_fatFs == null) return;
+            if (isDirectory) _fatFs.MoveDirectory(oldPath, newPath);
+            else _fatFs.MoveFile(oldPath, newPath);
+        }
+        finally { _fsLock.Release(); }
     }
 
     public void CreateDirectory(string path)
     {
-        if (_fatFs == null) return;
-        _fatFs.CreateDirectory(path);
+        _fsLock.Wait();
+        try { _fatFs?.CreateDirectory(path); } finally { _fsLock.Release(); }
     }
 
-    public void Disconnect()
+    public void Disconnect(bool hardwareDeinit = true)
     {
-        _fatFs?.Dispose();
-        _stream?.Dispose();
-        _device.SdDeinit();
+        _fsLock.Wait();
+        try
+        {
+            _fatFs?.Dispose();
+            _stream?.Dispose();
+            if (hardwareDeinit) _device.SdDeinit();
+            _fatFs = null;
+            _stream = null;
+        }
+        finally { _fsLock.Release(); }
     }
 
     private static string FormatSize(long size)

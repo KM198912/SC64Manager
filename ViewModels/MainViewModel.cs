@@ -4,10 +4,13 @@ using System.Collections.ObjectModel;
 using NetGui.Services;
 using NetGui.Models;
 using Microsoft.Maui.Graphics;
+using Microsoft.Maui.Graphics.Platform;
 using Microsoft.Maui.ApplicationModel;
 using CommunityToolkit.Maui.Storage;
 using CommunityToolkit.Maui.Alerts;
+using CommunityToolkit.Maui.Core;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.IO;
 using System.Linq;
@@ -25,15 +28,18 @@ public partial class MainViewModel : ObservableObject
     };
 
     private readonly SC64Device _device;
+    private readonly SettingsService _settings;
+    private readonly GamesDbService _gdb;
     private readonly FsService _fs;
     private readonly HttpClient _httpClient;
-    private readonly SettingsService _settings;
     private CancellationTokenSource? _pollingCts;
+    private CancellationTokenSource? _metadataCts;
 
-    public MainViewModel(SettingsService settings)
+    public MainViewModel(SC64Device device, SettingsService settings, GamesDbService gdb)
     {
+        _device = device;
         _settings = settings;
-        _device = new SC64Device();
+        _gdb = new GamesDbService(settings, msg => Log(msg)); 
         _fs = new FsService(_device);
         _httpClient = new HttpClient();
         _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("SC64Manager/1.0");
@@ -136,6 +142,18 @@ public partial class MainViewModel : ObservableObject
         set { _settings.DeployerPath = value; OnPropertyChanged(); }
     }
 
+    public string GamesDbApiKey
+    {
+        get => _settings.GamesDbApiKey;
+        set { _settings.GamesDbApiKey = value; OnPropertyChanged(); }
+    }
+
+    public bool MetadataFallbackEnabled
+    {
+        get => _settings.MetadataFallbackEnabled;
+        set { _settings.MetadataFallbackEnabled = value; OnPropertyChanged(); }
+    }
+
     [ObservableProperty]
     public partial bool UpdateAvailable { get; set; }
 
@@ -144,6 +162,33 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     public partial string LatestVersionTag { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string HardwareVoltage { get; set; } = "-- V";
+
+    [ObservableProperty]
+    public partial string HardwareTemperature { get; set; } = "-- °C";
+
+    [ObservableProperty]
+    public partial string HardwareCicStatus { get; set; } = "Disconnected";
+
+    [ObservableProperty]
+    public partial string HardwareRtcTime { get; set; } = "--:--:--";
+
+    [ObservableProperty]
+    public partial string HardwareRtcStatus { get; set; } = "Not Synced";
+
+    [ObservableProperty]
+    public partial bool IsSdMounted { get; set; }
+
+    [ObservableProperty]
+    public partial string? CurrentBoxArtPreview { get; set; }
+
+    [ObservableProperty]
+    public partial string? CurrentDescription { get; set; }
+
+    [ObservableProperty]
+    public partial string MusicStatus { get; set; } = "Unknown (Check required)";
 
     public ObservableCollection<string> AvailablePorts { get; } 
     public ObservableCollection<FileItem> LocalFiles { get; } 
@@ -177,7 +222,60 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task OpenHelp()
+    {
+        try
+        {
+            await Browser.Default.OpenAsync("https://github.com/KM198912/SC64Manager/blob/main/help.md", BrowserLaunchMode.SystemPreferred);
+        }
+        catch (Exception ex)
+        {
+            Log($"Help Error: {ex.Message}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task SyncRtc()
+    {
+        if (!IsConnected || IsBusy) return;
+        
+        try
+        {
+            var now = DateTime.Now;
+            Log($"Syncing RTC clock to PC: {now:yyyy-MM-dd HH:mm:ss}...");
+            bool success = await Task.Run(() => _device.SetRtcTime(now));
+            if (success) 
+            {
+                Log("SUCCESS: Cartridge RTC synchronized.");
+                HardwareRtcStatus = $"Synced to PC at {now:HH:mm:ss}";
+                
+                try
+                {
+                    await MainThread.InvokeOnMainThreadAsync(async () => {
+                        var toast = Toast.Make("RTC Synchronized Successfully", ToastDuration.Short);
+                        await toast.Show();
+                    });
+                }
+                catch { /* Ignore toast failures - occurs if app isn't fully registered for Win notifications */ }
+            }
+            else 
+            {
+                Log("ERROR: RTC Sync failed.");
+                HardwareRtcStatus = "Sync Failed";
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"RTC Error: {ex.Message}");
+            HardwareRtcStatus = "Error during Sync";
+        }
+    }
+
+    [RelayCommand]
     private async Task GoToAbout() => await Shell.Current.GoToAsync("AboutPage");
+
+    [RelayCommand]
+    private async Task GoToHardware() => await Shell.Current.GoToAsync("HardwarePage");
 
     [RelayCommand]
     private async Task OpenDebugConsole()
@@ -225,7 +323,7 @@ public partial class MainViewModel : ObservableObject
         if (wasConnected)
         {
             Log("Handoff: Releasing COM port for Debug Console...");
-            Disconnect();
+            await Disconnect();
             await Task.Delay(500); // Wait for OS to fully release the handle
         }
 
@@ -303,21 +401,37 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void Disconnect()
+    private async Task Disconnect()
     {
+        if (IsBusy) return;
+        IsBusy = true;
+        Log("Initiating safe disconnect...");
+        
         try
         {
-            _pollingCts?.Cancel();
-            _fs.Disconnect();
-            _device.Disconnect();
-            IsConnected = false;
-            IsN64PoweredOn = false;
-            OnPropertyChanged(nameof(IsConnected));
-            Log("DISCONNECTED: Hardware bridge released.");
+            await Task.Run(() => {
+                _pollingCts?.Cancel();
+                // If N64 is ON, we skip hardware deinit because the console owns the SD
+                if (IsSdMounted) _fs.Disconnect(hardwareDeinit: !IsN64PoweredOn);
+                _device.Disconnect();
+            });
+
+            MainThread.BeginInvokeOnMainThread(() => {
+                IsConnected = false;
+                IsSdMounted = false;
+                IsN64PoweredOn = false;
+                StatusText = "Disconnected";
+                OnPropertyChanged(nameof(IsConnected));
+            });
+            Log("DISCONNECTED: Hardware bridge released safely.");
         }
         catch (Exception ex)
         {
             Log($"Disconnect Error: {ex.Message}");
+        }
+        finally
+        {
+            IsBusy = false;
         }
     }
 
@@ -341,97 +455,744 @@ public partial class MainViewModel : ObservableObject
             
             try
             {
-                if (_device.Connect(SelectedPort))
+                string port = SelectedPort;
+                bool success = await Task.Run(() => {
+                    Log("COM: Attempting to open serial port...");
+                    if (_device.Connect(port))
+                    {
+                        Log("COM: Serial port handle acquired.");
+                        Log("COM: Sending hardware reset signal...");
+                        if (!_device.ResetHandshake())
+                        {
+                            Log("COM ERROR: Reset handshake failed (No response from Cartridge)");
+                            _device.Disconnect();
+                            return false;
+                        }
+
+                        Log("COM: Waiting for hardware signature...");
+                        if (_device.GetIdentifier() == "Unknown")
+                        {
+                            Log("COM ERROR: Device signature not found (Hardware desync)");
+                            _device.Disconnect();
+                            return false;
+                        }
+
+                        return true;
+                    }
+                    return false;
+                });
+
+                if (success)
                 {
-                    Log("Connected. Performing hardware handshake...");
-                    if (!_device.ResetHandshake())
-                    {
-                        Log("Error: Handshake failed.");
-                        _device.Disconnect();
-                        return;
-                    }
-
-                    Log("Identifying SummerCart64...");
-                    if (_device.GetIdentifier() == "Unknown")
-                    {
-                        Log("Error: Device signature not found.");
-                        _device.Disconnect();
-                        return;
-                    }
-
-                    var version = _device.GetVersion();
-                    Log($"Cart Version: {version}");
+                    Log("COM: Requesting firmware version...");
+                    var version = await Task.Run(() => _device.GetVersion());
+                    string versionStr = version?.ToString() ?? "Unknown";
+                    Log($"Cart Version: {versionStr}");
 
                     // Boot-time Power Check (Wait for FPGA stability)
+                    ProgressValue = 0.5;
+                    ProgressText = "Verifying Power Status...";
                     await Task.Delay(200);
                     Log("Detecting console power status...");
-                    byte step = _device.GetCicStep();
+                    byte step = await Task.Run(() => _device.GetCicStep());
                     IsN64PoweredOn = step > 1;
                     if (IsN64PoweredOn) Log("⚠️ ALERT: N64 is already powered ON.");
 
-                    Log("Initializing protocol state...");
-                    _device.StateReset();
+                    Log("Finalizing protocol handshake...");
+                    await Task.Run(() => _device.StateReset());
                     
-                    Log("Mounting SD card...");
-                    var success = await Task.Run(() => _fs.Mount(Log));
-                    if (success)
-                    {
-                        Log("Mount SUCCESS. Preparing UI...");
-                        
-                        MainThread.BeginInvokeOnMainThread(async () => {
-                            IsConnected = true;
-                            StatusText = $"Connected ({version})";
-                            CurrentRemotePath = "/";
-                            
-                            Log("Starting hardware status polling...");
-                            _pollingCts = new CancellationTokenSource();
-                            _ = StartPollingLoop(_pollingCts.Token);
+                    ProgressValue = 0.8;
+                    IsConnected = true;
+                    StatusText = $"Connected ({versionStr})";
+                    Log("SUCCESS: Hardware bridge established. (SD Card NOT mounted)");
 
-                            Log("Scanning initial directory tree...");
-                            await RefreshRemoteFilesInternal();
-                            
-                            Log("Running update check sequence...");
-                            await CheckForUpdates(version);
-                        });
-                        
-                        Log("Connection sequence COMPLETED.");
-                    }
-                    else
-                    {
-                        Log("Error: SD Card mount failed.");
-                        _device.Disconnect();
-                    }
+                    Log("Starting background status monitoring...");
+                    _pollingCts = new CancellationTokenSource();
+                    _ = Task.Run(() => StartPollingLoop(_pollingCts.Token), _pollingCts.Token);
+                }
+                else
+                {
+                    Log("COM ERROR: Failed to open serial port.");
                 }
             }
             catch (Exception ex)
             {
-                Log($"CRITICAL CRASH: {ex.Message}\n{ex.StackTrace}");
-                if (Application.Current?.Windows.Count > 0)
-                {
-                    await Application.Current.Windows[0].Page!.DisplayAlertAsync("Connection Crash", ex.Message, "OK");
-                }
+                Log($"Connection Fault: {ex.Message}");
+                _device.Disconnect();
             }
-            finally
-            {
-                IsBusy = false;
-            }
+            finally { IsBusy = false; }
         }
         else
         {
-            _pollingCts?.Cancel();
+            IsBusy = true;
+            Log("Closing connection...");
+            try
+            {
+                await Task.Run(() => {
+                    _pollingCts?.Cancel();
+                    if (IsSdMounted) _fs.Disconnect(hardwareDeinit: !IsN64PoweredOn);
+                    _device.Disconnect();
+                });
+
+                MainThread.BeginInvokeOnMainThread(() => {
+                    IsConnected = false;
+                    IsSdMounted = false;
+                    IsN64PoweredOn = false;
+                    UpdateAvailable = false;
+                    IsUpToDate = false;
+                    StatusText = "Disconnected";
+                    RemoteFiles.Clear();
+                });
+                
+                Log("Disconnected safely.");
+            }
+            catch (Exception ex) { Log($"Disconnect Error: {ex.Message}"); }
+            finally { IsBusy = false; }
+        }
+    }
+
+    [RelayCommand]
+    private async Task TestGamesDbConnectionAsync()
+    {
+        IsBusy = true;
+        Log("TheGamesDB: Testing connection...");
+        try
+        {
+            var success = await _gdb.TestConnectionAsync();
+            if (success)
+                Log("SUCCESS: TheGamesDB connection verified.");
+            else
+                Log("ERROR: TheGamesDB verification failed. Check API key.");
+        }
+        catch (Exception ex) { Log($"TheGamesDB Error: {ex.Message}"); }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand]
+    private async Task MountSd()
+    {
+        if (!IsConnected || IsSdMounted || IsBusy) return;
+
+        if (IsN64PoweredOn)
+        {
+            if (Application.Current?.Windows.Count > 0)
+            {
+                bool proceed = await Application.Current.Windows[0].Page!.DisplayAlertAsync(
+                    "Hardware Warning", 
+                    "The N64 console is currently powered ON. Mounting the SD card while the console is active will cause a hardware lock and possible data corruption on the cartridge.\n\nAre you EXTREMELY sure you want to proceed?", 
+                    "PROCEED (Dangerous)", "CANCEL");
+                
+                if (!proceed) return;
+            }
+        }
+
+        IsBusy = true;
+        Log("Mounting SD card...");
+        try
+        {
+            var success = await Task.Run(() => _fs.Mount(Log));
+            if (success)
+            {
+                IsSdMounted = true;
+                Log("Mount SUCCESS. Preparing UI...");
+                CurrentRemotePath = "/";
+                await RefreshRemoteFilesInternal();
+                await CheckMusicStatusAsync();
+            }
+            else
+            {
+                Log("Mount FAILED.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"Mount Error: {ex.Message}");
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private void UnmountSd()
+    {
+        if (!IsSdMounted) return;
+        
+        try
+        {
+            Log("Unmounting SD card...");
             _fs.Disconnect();
-            _device.Disconnect();
-            
-            MainThread.BeginInvokeOnMainThread(() => {
-                IsConnected = false;
-                IsN64PoweredOn = false;
-                UpdateAvailable = false;
-                IsUpToDate = false;
-                StatusText = "Disconnected";
-                RemoteFiles.Clear();
+            IsSdMounted = false;
+            RemoteFiles.Clear();
+            MusicStatus = "Unknown (Check required)";
+            Log("SUCCESS: Filesystem bridge released. SD card is now safe to access from console.");
+        }
+        catch (Exception ex)
+        {
+            Log($"Unmount Error: {ex.Message}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task SetMenuMusic()
+    {
+        if (!IsSdMounted) 
+        {
+            Log("ERROR: SD card must be MOUNTED to set music.");
+            return;
+        }
+
+        try
+        {
+            var result = await FilePicker.Default.PickAsync(new PickOptions
+            {
+                PickerTitle = "Select Menu Background Music (.mp3)",
+                FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>> {
+                    { DevicePlatform.WinUI, new[] { "*.mp3" } },
+                    { DevicePlatform.macOS, new[] { "mp3" } }
+                })
             });
+
+            if (result == null) return;
+
+            IsBusy = true;
+            Log($"Setting background music: {result.FileName}...");
+
+            await Task.Run(() => {
+                try {
+                    if (!_fs.ListDir("/").Any(x => x.Name == "menu" && x.IsDirectory))
+                    {
+                        Log("Creating /menu directory...");
+                        _fs.CreateDirectory("/menu");
+                    }
+
+                    if (_fs.ListDir("/menu").Any(x => x.Name == "bg.mp3"))
+                    {
+                        Log("Overwriting existing bg.mp3...");
+                        _fs.DeleteFile("/menu/bg.mp3");
+                    }
+
+                    using var source = File.OpenRead(result.FullPath);
+                    using var dest = _fs.OpenFile("/menu/bg.mp3", FileMode.Create);
+                    Log("Uploading file to cartridge SD...");
+                    source.CopyTo(dest);
+                    Log("SUCCESS: Background music updated.");
+                }
+                catch (Exception ex) {
+                    Log($"Music Upload Error: {ex.Message}");
+                }
+            });
+
+            await CheckMusicStatusAsync();
+        }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand]
+    private async Task RemoveMenuMusic()
+    {
+        if (!IsSdMounted) return;
+
+        IsBusy = true;
+        try
+        {
+            await Task.Run(() => {
+                if (_fs.ListDir("/menu").Any(x => x.Name == "bg.mp3"))
+                {
+                    _fs.DeleteFile("/menu/bg.mp3");
+                    Log("SUCCESS: Removed /menu/bg.mp3.");
+                }
+            });
+            await CheckMusicStatusAsync();
+        }
+        finally { IsBusy = false; }
+    }
+
+    private async Task CheckMusicStatusAsync()
+    {
+        if (!IsSdMounted) return;
+        
+        await Task.Run(() => {
+            try {
+                bool exists = _fs.ListDir("/menu").Any(x => x.Name == "bg.mp3");
+                MusicStatus = exists ? "Active (/menu/bg.mp3)" : "Not Set";
+            }
+            catch { MusicStatus = "Error checking status"; }
+        });
+    }
+
+    [RelayCommand]
+    private async Task ScrapeBoxArt()
+    {
+        var romFiles = RemoteFiles.Where(f => !f.IsDirectory &&
+            (f.Name.EndsWith(".z64", StringComparison.OrdinalIgnoreCase) ||
+             f.Name.EndsWith(".n64", StringComparison.OrdinalIgnoreCase) ||
+             f.Name.EndsWith(".v64", StringComparison.OrdinalIgnoreCase))).ToList();
+
+        await ScrapeItemsInternalAsync(romFiles, "folder-wide");
+    }
+
+    [RelayCommand]
+    private async Task ScrapeSelected()
+    {
+        var selected = RemoteFiles.Where(f => f.IsSelected && !f.IsDirectory &&
+            (f.Name.EndsWith(".z64", StringComparison.OrdinalIgnoreCase) ||
+             f.Name.EndsWith(".n64", StringComparison.OrdinalIgnoreCase) ||
+             f.Name.EndsWith(".v64", StringComparison.OrdinalIgnoreCase))).ToList();
+
+        await ScrapeItemsInternalAsync(selected, "selection-based");
+    }
+
+    private async Task ScrapeItemsInternalAsync(List<FileItem> romFiles, string mode)
+    {
+        if (!IsSdMounted || IsBusy) return;
+
+        if (!romFiles.Any())
+        {
+            Log($"No valid ROM files found for {mode} scrape.");
+            return;
+        }
+
+        IsBusy = true;
+        ProgressValue = 0;
+        Log($"Starting {mode} box art scraper for {romFiles.Count} ROMs...");
+
+        try
+        {
+            int processed = 0;
+            using var http = new HttpClient();
+
+            foreach (var rom in romFiles)
+            {
+                processed++;
+                ProgressValue = (double)processed / romFiles.Count;
+                ProgressText = $"Processing: {rom.Name}";
+                CurrentFileName = rom.Name;
+
+                // 1. Identify ROM ID
+                string fullPath = Path.Combine(CurrentRemotePath, rom.Name).Replace("\\", "/");
+                string id = await Task.Run(() => GetRomId(fullPath));
+                
+                if (string.IsNullOrEmpty(id) || id.Length < 4)
+                {
+                    Log($"Could not identify ID for {rom.Name}. Skipping.");
+                    continue;
+                }
+
+                rom.RomId = id;
+                Log($"Identified {rom.Name} as [{id}]");
+
+                // 2. Build remote path for metadata (Hybrid Casing: lowercase parent, uppercase ID)
+                char c1 = char.ToUpper(id[0]);
+                char c2 = char.ToUpper(id[1]);
+                char c3 = char.ToUpper(id[2]);
+                char c4 = char.ToUpper(id[3]);
+                string metadataPath = $"/menu/metadata/{c1}/{c2}/{c3}/{c4}";
+                string remoteTarget = $"{metadataPath}/boxart_front.png";
+
+                // 3. Scan for existing metadata files (Hybrid Casing)
+                var existingFiles = await Task.Run(() => {
+                    try { return _fs.ListDir(metadataPath).Select(x => x.Name).ToList(); }
+                    catch { return new List<string>(); }
+                });
+
+                bool artExists = existingFiles.Contains("boxart_front.png");
+                bool descExists = existingFiles.Contains("description.txt");
+
+                if (artExists && descExists)
+                {
+                    Log($"Metadata (Art + Desc) already exists for [{id}]. Skipping.");
+                    continue;
+                }
+
+                // 4. Resolve assets (GitHub + GamesDB Fallback)
+                if (!artExists || !descExists)
+                {
+                    string githubUrlArt = $"https://raw.githubusercontent.com/n64-tools/n64-flashcart-menu-metadata/main/metadata/{c1}/{c2}/{c3}/{c4}/boxart_front.png";
+                    string githubUrlDesc = $"https://raw.githubusercontent.com/n64-tools/n64-flashcart-menu-metadata/main/metadata/{c1}/{c2}/{c3}/{c4}/description.txt";
+                    string githubUrlIni = $"https://raw.githubusercontent.com/n64-tools/n64-flashcart-menu-metadata/main/metadata/{c1}/{c2}/{c3}/{c4}/metadata.ini";
+
+                    try
+                    {
+                        // Handle Box Art (Only if missing from primary source)
+                        if (!artExists)
+                        {
+                            var artResponse = await http.GetAsync(githubUrlArt);
+                            if (artResponse.IsSuccessStatusCode)
+                            {
+                                using var stream = await artResponse.Content.ReadAsStreamAsync();
+                                using var image = PlatformImage.FromStream(stream);
+                                using var resizedImage = image.Downsize(158);
+                                using var pngMs = new MemoryStream();
+                                resizedImage.Save(pngMs, ImageFormat.Png);
+                                byte[] pngData = pngMs.ToArray();
+
+                                await Task.Run(() => {
+                                    EnsureDirectoryExistsRemote("/menu");
+                                    EnsureDirectoryExistsRemote("/menu/metadata");
+                                    EnsureDirectoryExistsRemote($"/menu/metadata/{c1}");
+                                    EnsureDirectoryExistsRemote($"/menu/metadata/{c1}/{c2}");
+                                    EnsureDirectoryExistsRemote($"/menu/metadata/{c1}/{c2}/{c3}");
+                                    EnsureDirectoryExistsRemote($"/menu/metadata/{c1}/{c2}/{c3}/{c4}");
+                                });
+
+                                await Task.Run(() => {
+                                    using var ms = new MemoryStream(pngData);
+                                    using var dest = _fs.OpenFile(remoteTarget, FileMode.Create);
+                                    ms.CopyTo(dest);
+                                });
+
+                                var cacheDir = Path.Combine(FileSystem.CacheDirectory, "BoxArt", c1.ToString(), c2.ToString(), c3.ToString(), c4.ToString());
+                                Directory.CreateDirectory(cacheDir);
+                                var localPath = Path.Combine(cacheDir, "boxart_front.png");
+                                await File.WriteAllBytesAsync(localPath, pngData);
+                                rom.BoxArtPath = localPath;
+                                artExists = true;
+                                Log($"SUCCESS: Box art (GitHub + Resized) deployed for [{id}]");
+
+                                // Try to get pretty name from .ini if it exists on GitHub
+                                var iniResponse = await http.GetAsync(githubUrlIni);
+                                if (iniResponse.IsSuccessStatusCode)
+                                {
+                                    var iniContent = await iniResponse.Content.ReadAsStringAsync();
+                                    var nameLine = iniContent.Split('\n').FirstOrDefault(l => l.StartsWith("name="));
+                                    if (nameLine != null)
+                                    {
+                                        rom.ScrapedTitle = nameLine.Substring(5).Trim();
+                                    }
+                                }
+                            }
+                        }
+
+                        // Handle Description (Only if missing from primary source)
+                        if (!descExists)
+                        {
+                            var descResponse = await http.GetAsync(githubUrlDesc);
+                            if (descResponse.IsSuccessStatusCode)
+                            {
+                                var descText = await descResponse.Content.ReadAsStringAsync();
+                                var wrappedText = WordWrap(descText, 60).Replace("\r\n", "\n");
+                                string remoteTargetDesc = $"{metadataPath}/description.txt";
+
+                                await Task.Run(() => {
+                                    var encoding = new System.Text.UTF8Encoding(false);
+                                    byte[] descBytes = encoding.GetBytes(wrappedText);
+                                    using var ms = new MemoryStream(descBytes);
+                                    using var dest = _fs.OpenFile(remoteTargetDesc, FileMode.Create);
+                                    ms.CopyTo(dest);
+                                });
+
+                                var cacheDir = Path.Combine(FileSystem.CacheDirectory, "BoxArt", c1.ToString(), c2.ToString(), c3.ToString(), c4.ToString());
+                                Directory.CreateDirectory(cacheDir);
+                                await File.WriteAllTextAsync(Path.Combine(cacheDir, "description.txt"), descText);
+                                rom.Description = descText;
+                                descExists = true; // Mark as found
+                                Log($"SUCCESS: Description (GitHub) deployed for [{id}]");
+                            }
+                            else if (_settings.MetadataFallbackEnabled)
+                            {
+                                // GamesDB Fallback
+                                Log($"GITHUB 404: Falling back to TheGamesDB for [{id}]...");
+                                var gdbMeta = await _gdb.GetGameMetadataAsync(id, rom.Name);
+                                if (gdbMeta != null)
+                                {
+                                    Log($"GDB Result: '{gdbMeta.Description?[..Math.Min(20, gdbMeta.Description?.Length ?? 0)]}...' (Found: true)");
+                                    if (!string.IsNullOrEmpty(gdbMeta.Title))
+                                    {
+                                        rom.ScrapedTitle = gdbMeta.Title;
+                                    }
+                                    // Ensure folders
+                                    await Task.Run(() => {
+                                        EnsureDirectoryExistsRemote($"/menu/metadata/{c1}/{c2}/{c3}/{c4}");
+                                    });
+
+                                    if (!string.IsNullOrEmpty(gdbMeta.Description))
+                                    {
+                                        var descText = gdbMeta.Description;
+                                        var wrappedText = WordWrap(descText, 60).Replace("\r\n", "\n");
+                                        string remoteTargetDesc = $"{metadataPath}/description.txt";
+                                        await Task.Run(() => {
+                                            var encoding = new System.Text.UTF8Encoding(false);
+                                            byte[] descBytes = encoding.GetBytes(wrappedText);
+                                            using var ms = new MemoryStream(descBytes);
+                                            using var dest = _fs.OpenFile(remoteTargetDesc, FileMode.Create);
+                                            ms.CopyTo(dest);
+                                        });
+
+                                        var cacheDir = Path.Combine(FileSystem.CacheDirectory, "BoxArt", c1.ToString(), c2.ToString(), c3.ToString(), c4.ToString());
+                                        Directory.CreateDirectory(cacheDir);
+                                        await File.WriteAllTextAsync(Path.Combine(cacheDir, "description.txt"), descText);
+                                        rom.Description = descText;
+                                        descExists = true;
+                                        Log($"SUCCESS: Description (GamesDB) deployed for [{id}]");
+                                    }
+
+                                    if (!artExists && !string.IsNullOrEmpty(gdbMeta.BoxArtUrl))
+                                    {
+                                        var artResponse = await http.GetAsync(gdbMeta.BoxArtUrl);
+                                        if (artResponse.IsSuccessStatusCode)
+                                        {
+                                            using var stream = await artResponse.Content.ReadAsStreamAsync();
+                                            using var image = PlatformImage.FromStream(stream);
+                                            using var resizedImage = image.Downsize(158);
+                                            using var pngMs = new MemoryStream();
+                                            resizedImage.Save(pngMs, ImageFormat.Png);
+                                            byte[] pngData = pngMs.ToArray();
+
+                                            await Task.Run(() => {
+                                                using var ms = new MemoryStream(pngData);
+                                                using var dest = _fs.OpenFile(remoteTarget, FileMode.Create);
+                                                ms.CopyTo(dest);
+                                            });
+
+                                            var cacheDirArt = Path.Combine(FileSystem.CacheDirectory, "BoxArt", c1.ToString(), c2.ToString(), c3.ToString(), c4.ToString());
+                                            Directory.CreateDirectory(cacheDirArt);
+                                            var localPathArt = Path.Combine(cacheDirArt, "boxart_front.png");
+                                            await File.WriteAllBytesAsync(localPathArt, pngData);
+                                            rom.BoxArtPath = null;
+                                            rom.BoxArtPath = localPathArt;
+                                            artExists = true;
+                                            Log($"SUCCESS: Box Art (GamesDB) deployed for [{id}]");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"Net Error for {rom.Name}: {ex.Message}");
+                    }
+                }
+
+                // 4b. Final local description check/creation
+                if (!string.IsNullOrEmpty(rom.Description))
+                {
+                    string remoteTargetDesc = $"{metadataPath}/description.txt";
+                    await Task.Run(() => {
+                        if (!_fs.ListDir(metadataPath).Any(f => f.Name == "description.txt"))
+                        {
+                            var wrappedText = WordWrap(rom.Description, 60).Replace("\r\n", "\n");
+                            var encoding = new System.Text.UTF8Encoding(false);
+                            byte[] descBytes = encoding.GetBytes(wrappedText);
+                            using (var ms = new MemoryStream(descBytes))
+                            using (var dest = _fs.OpenFile(remoteTargetDesc, FileMode.Create))
+                            {
+                                ms.CopyTo(dest);
+                            }
+                            Log($"SUCCESS: Late-resolved description.txt deployed for {rom.Name}");
+                        }
+                    });
+                }
+
+            }
+
+            // 6. Generate/Update folder-wide titles.txt index
+            await UpdateFolderTitlesIndexAsync(RemoteFiles.Where(f => !f.IsDirectory).ToList());
+        }
+        catch (Exception ex)
+        {
+            Log($"Scraper Error ({mode}): {ex.Message}");
+        }
+        finally
+        {
+            IsBusy = false;
+            ProgressText = string.Empty;
+            CurrentFileName = string.Empty;
+        }
+    }
+
+
+    private string GetRomId(string path)
+    {
+        try
+        {
+            using var stream = _fs.OpenFile(path, FileMode.Open);
+            byte[] header = new byte[64];
+            int read = stream.Read(header, 0, 64);
+            if (read < 64) return string.Empty;
+
+            // Detect byte-swap
+            bool swapped = header[0] == 0x37 && header[1] == 0x80;
             
-            Log("Disconnected.");
+            byte[] idBytes = new byte[4];
+            if (swapped)
+            {
+                idBytes[0] = header[0x3A];
+                idBytes[1] = header[0x3D];
+                idBytes[2] = header[0x3C];
+                idBytes[3] = header[0x3F];
+            }
+            else
+            {
+                idBytes[0] = header[0x3B];
+                idBytes[1] = header[0x3C];
+                idBytes[2] = header[0x3D];
+                idBytes[3] = header[0x3E];
+            }
+
+            return System.Text.Encoding.ASCII.GetString(idBytes).Trim();
+        }
+        catch { return string.Empty; }
+    }
+
+    private void EnsureDirectoryExistsRemote(string path)
+    {
+        try
+        {
+            string parent = Path.GetDirectoryName(path)?.Replace("\\", "/") ?? "/";
+            string name = Path.GetFileName(path);
+            
+            var existing = _fs.ListDir(parent);
+            if (!existing.Any(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase) && x.IsDirectory))
+            {
+                Log($"Creating remote directory: {path}");
+                _fs.CreateDirectory(path);
+            }
+        }
+        catch { }
+    }
+
+    private async Task UpdateFolderTitlesIndexAsync(List<FileItem> items)
+    {
+        try
+        {
+            var sb = new StringBuilder();
+            foreach (var item in items)
+            {
+                string prettyName = !string.IsNullOrEmpty(item.ScrapedTitle) ? item.ScrapedTitle : item.Name;
+                if (string.IsNullOrEmpty(item.ScrapedTitle) && prettyName.Contains('.'))
+                    prettyName = prettyName.Substring(0, prettyName.LastIndexOf('.'));
+
+                prettyName = CleanScrapedTitle(prettyName);
+
+                sb.Append(item.Name).Append("=").AppendLine(prettyName);
+            }
+
+            string content = sb.ToString().Replace("\r\n", "\n");
+            string remotePath = Path.Combine(CurrentRemotePath, "titles.txt").Replace("\\", "/");
+
+            await Task.Run(() => {
+                var encoding = new UTF8Encoding(false);
+                byte[] bytes = encoding.GetBytes(content);
+                using var ms = new MemoryStream(bytes);
+                using var dest = _fs.OpenFile(remotePath, FileMode.Create);
+                ms.CopyTo(dest);
+            });
+            Log($"SUCCESS: titles.txt index updated for folder.");
+        }
+        catch (Exception ex) { Log($"TITLES.TXT ERROR: {ex.Message}"); }
+    }
+
+    private string CleanScrapedTitle(string title)
+    {
+        if (string.IsNullOrEmpty(title)) return title;
+
+        // Strip common tags
+        string[] tags = { "(Europe)", "(USA)", "(Japan)", "(En,Fr,De)", "(En,Fr,De,Es,It)", "[!]", "(Rev 1)", "(Rev 2)", "(V1.0)", "(V1.1)", "(V1.2)" };
+        foreach (var tag in tags)
+        {
+            title = title.Replace(tag, "", StringComparison.OrdinalIgnoreCase);
+        }
+
+        // Clean up double spaces that might result from stripping
+        while (title.Contains("  ")) title = title.Replace("  ", " ");
+        
+        return title.Trim();
+    }
+
+
+    [RelayCommand]
+    private async Task ShowBoxArtPreview(FileItem item)
+    {
+        if (item == null) return;
+        
+        // 1. Identify ROM if not already identified
+        if (string.IsNullOrEmpty(item.RomId) && !item.IsDirectory)
+        {
+            string fullPath = Path.Combine(CurrentRemotePath, item.Name).Replace("\\", "/");
+            item.RomId = await Task.Run(() => GetRomId(fullPath));
+        }
+
+        if (string.IsNullOrEmpty(item.RomId)) return;
+
+        // 2. Resolve local cache paths
+        char c1 = item.RomId[0];
+        char c2 = item.RomId[1];
+        char c3 = item.RomId[2];
+        char c4 = item.RomId[3];
+        var cacheDir = Path.Combine(FileSystem.CacheDirectory, "BoxArt", c1.ToString(), c2.ToString(), c3.ToString(), c4.ToString());
+        
+        string localArt = Path.Combine(cacheDir, "boxart_front.png");
+        string localDesc = Path.Combine(cacheDir, "description.txt");
+
+        if (File.Exists(localArt))
+        {
+            CurrentBoxArtPreview = localArt;
+        }
+
+        if (File.Exists(localDesc))
+        {
+            CurrentDescription = File.ReadAllText(localDesc);
+        }
+        else if (!string.IsNullOrEmpty(item.Description))
+        {
+            CurrentDescription = item.Description;
+        }
+    }
+
+    [RelayCommand]
+    private void CloseBoxArtPreview()
+    {
+        CurrentBoxArtPreview = null;
+        CurrentDescription = null;
+    }
+
+    private async Task AutoResolveRemoteMetadataAsync(CancellationToken token)
+    {
+        if (!IsConnected || !IsSdMounted || token.IsCancellationRequested) return;
+
+        var romsToResolve = RemoteFiles.Where(f => !f.IsDirectory && 
+                (f.Name.EndsWith(".z64", StringComparison.OrdinalIgnoreCase) || 
+                 f.Name.EndsWith(".n64", StringComparison.OrdinalIgnoreCase) || 
+                 f.Name.EndsWith(".v64", StringComparison.OrdinalIgnoreCase))).ToList();
+
+        if (!romsToResolve.Any()) return;
+
+        foreach (var rom in romsToResolve)
+        {
+            if (token.IsCancellationRequested) break;
+            try
+            {
+                // Only resolve if we don't have a BoxArt path yet
+                if (string.IsNullOrEmpty(rom.BoxArtPath))
+                {
+                    if (string.IsNullOrEmpty(rom.RomId))
+                    {
+                        string fullPath = Path.Combine(CurrentRemotePath, rom.Name).Replace("\\", "/");
+                        rom.RomId = GetRomId(fullPath);
+                    }
+                    
+                    if (token.IsCancellationRequested) return;
+
+                    if (!string.IsNullOrEmpty(rom.RomId))
+                    {
+                        char c1 = rom.RomId[0];
+                        char c2 = rom.RomId[1];
+                        char c3 = rom.RomId[2];
+                        char c4 = rom.RomId[3];
+                        var cacheDir = Path.Combine(FileSystem.CacheDirectory, "BoxArt", c1.ToString(), c2.ToString(), c3.ToString(), c4.ToString());
+                        var localArt = Path.Combine(cacheDir, "boxart_front.png");
+
+                        if (File.Exists(localArt))
+                        {
+                            rom.BoxArtPath = localArt;
+                        }
+                    }
+                }
+            }
+            catch { /* Skip failing ROMs during auto-resolve */ }
         }
     }
 
@@ -441,11 +1202,11 @@ public partial class MainViewModel : ObservableObject
         {
             try
             {
-                // Only poll if not busy with another command (the Lock handles this but it's cleaner to check)
                 if (IsConnected && !IsBusy)
                 {
+                    // Polling logic
                     byte step = _device.GetCicStep();
-                    bool poweredOn = step > 1; // 0=Unavailable, 1=PowerOff, Others=On
+                    bool poweredOn = step > 1; 
                     
                     if (poweredOn != IsN64PoweredOn)
                     {
@@ -455,6 +1216,17 @@ public partial class MainViewModel : ObservableObject
                             else Log("STATUS: N64 console powered OFF.");
                         });
                     }
+
+                    // Extended Diagnostics
+                    var (volt, temp) = _device.GetDiagnosticData();
+                    var rtc = _device.GetRtcTime();
+                    
+                    MainThread.BeginInvokeOnMainThread(() => {
+                        HardwareVoltage = volt > 0 ? $"{volt:F3} V" : "-- V";
+                        HardwareTemperature = temp > 0 ? $"{temp:F1} °C" : "-- °C";
+                        HardwareCicStatus = GetCicStepName(step);
+                        HardwareRtcTime = rtc?.ToString("yyyy-MM-dd HH:mm:ss") ?? "--:--:--";
+                    });
                 }
             }
             catch { }
@@ -463,6 +1235,26 @@ public partial class MainViewModel : ObservableObject
             catch (OperationCanceledException) { break; }
         }
     }
+
+    private string GetCicStepName(byte step) => step switch
+    {
+        0 => "Unavailable",
+        1 => "Power Off",
+        2 => "Load Config",
+        3 => "ID",
+        4 => "Seed",
+        5 => "Checksum",
+        6 => "RAM Init",
+        7 => "Command Wait",
+        8 => "Compare Algorithm",
+        9 => "X105 Algorithm",
+        10 => "Reset Pressed",
+        11 => "DIE (Disabled)",
+        12 => "DIE (64DD Mode)",
+        13 => "DIE (Invalid Region)",
+        14 => "DIE (Command)",
+        _ => "Unknown"
+    };
 
     private async Task CheckForUpdates(FirmwareVersion? current)
     {
@@ -661,6 +1453,12 @@ public partial class MainViewModel : ObservableObject
                 RemoteFiles.Clear();
                 foreach (var f in sortedFiles) RemoteFiles.Add(f);
                 Log("Remote UI Refresh complete.");
+                
+                // Start background metadata auto-resolution (Cancel old one first)
+                _metadataCts?.Cancel();
+                _metadataCts = new CancellationTokenSource();
+                var token = _metadataCts.Token;
+                _ = Task.Run(() => AutoResolveRemoteMetadataAsync(token), token);
             });
         }
         catch (Exception ex)
@@ -805,6 +1603,7 @@ public partial class MainViewModel : ObservableObject
         ProgressValue = 0;
         CurrentFileName = "Selected Items";
         ProgressText = "Deleting Files...";
+        _metadataCts?.Cancel(); // Stop any pending ROM ID lookups to free the FS lock
 
         try
         {
@@ -893,6 +1692,38 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task MoveRemoteFile(FileItem item)
+    {
+        if (!IsConnected || IsBusy || item.Name == "..") return;
+
+        if (IsN64PoweredOn)
+        {
+            Log("DENIED: SD Modifications are blocked while N64 is powered ON.");
+            await Application.Current!.Windows[0].Page!.DisplayAlertAsync("Operation Blocked", "The SD card is locked by the N64. Please power off the console to move files.", "OK");
+            return;
+        }
+
+        var targetPath = await Application.Current!.Windows[0].Page!.DisplayPromptAsync(
+            "Move Item", $"Enter full target path for {item.Name}:", "Move", "Cancel", initialValue: CurrentRemotePath);
+
+        if (string.IsNullOrWhiteSpace(targetPath)) return;
+
+        IsBusy = true;
+        try
+        {
+            var oldPath = CurrentRemotePath.TrimEnd('/') + "/" + item.Name;
+            var newPath = targetPath.TrimEnd('/') + "/" + item.Name;
+            
+            Log($"Moving: {item.Name} to {targetPath}...");
+            await Task.Run(() => _fs.Rename(oldPath, newPath, item.IsDirectory));
+            await RefreshRemoteFilesInternal();
+            Log("Move complete.");
+        }
+        catch (Exception ex) { Log($"Move Error: {ex.Message}"); }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand]
     private async Task UploadLocalFileItem(FileItem item)
     {
         if (!IsConnected || IsBusy || item.IsDirectory) return;
@@ -975,5 +1806,34 @@ public partial class MainViewModel : ObservableObject
         int i = 0;
         while (s >= 1024 && i < units.Length - 1) { s /= 1024; i++; }
         return $"{s:F1} {units[i]}";
+    }
+
+    private string WordWrap(string text, int width)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        
+        string[] words = text.Split(' ');
+        var sb = new StringBuilder();
+        int currentLineLength = 0;
+
+        foreach (var word in words)
+        {
+            if (currentLineLength + word.Length + 1 > width)
+            {
+                sb.AppendLine();
+                currentLineLength = 0;
+            }
+
+            if (currentLineLength > 0)
+            {
+                sb.Append(" ");
+                currentLineLength++;
+            }
+
+            sb.Append(word);
+            currentLineLength += word.Length;
+        }
+
+        return sb.ToString();
     }
 }

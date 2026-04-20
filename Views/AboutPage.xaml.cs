@@ -2,9 +2,10 @@ namespace NetGui.Views;
 
 public partial class AboutPage : ContentPage
 {
-	public AboutPage()
+	public AboutPage(ViewModels.MainViewModel viewModel)
 	{
 		InitializeComponent();
+        BindingContext = viewModel;
 	}
 
     private async void OnOfficialSiteClicked(object? sender, EventArgs e)

@@ -12,6 +12,7 @@
             <conv:InverseBoolConverter x:Key="InverseBoolConverter" />
             <conv:ConnectionColorConverter x:Key="ConnectionColorConverter" />
             <conv:NotParentDirConverter x:Key="NotParentDirConverter" />
+            <conv:IsNullConverter x:Key="IsNullConverter" />
         </ResourceDictionary>
     </ContentPage.Resources>
 
@@ -157,10 +158,30 @@
             <Grid Grid.Row="2" Grid.Column="1" RowDefinitions="Auto, Auto, *">
                 <HorizontalStackLayout Grid.Row="0" Spacing="10" Margin="0,0,0,5">
                     <Label Text="SummerCart64 SD" FontSize="16" FontAttributes="Bold" TextColor="#4caf50" VerticalOptions="Center"/>
-                    <Label Text="{Binding CurrentRemotePath}" TextColor="#888888" VerticalOptions="Center" FontSize="13"/>
+                    <Label Text="{Binding CurrentRemotePath}" TextColor="#888888" VerticalOptions="Center" FontSize="13" IsVisible="{Binding IsSdMounted}"/>
                 </HorizontalStackLayout>
                 
-                <HorizontalStackLayout Grid.Row="1" Spacing="10" Margin="0,0,0,10">
+                <!-- SD Not Mounted Placeholder -->
+                <Border Grid.Row="1" Grid.RowSpan="2" IsVisible="{Binding IsSdMounted, Converter={StaticResource InverseBoolConverter}}"
+                        BackgroundColor="#252525" StrokeShape="RoundRectangle 8" Margin="0,10,0,0">
+                    <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center" Spacing="20" Padding="40">
+                        <Label Text="📤" FontSize="48" HorizontalOptions="Center"/>
+                        <Label Text="SD Card Not Mounted" FontSize="18" FontAttributes="Bold" TextColor="White" HorizontalOptions="Center"/>
+                        <Label Text="Filesystem access must be manually established." TextColor="#888" HorizontalOptions="Center" HorizontalTextAlignment="Center"/>
+                        
+                        <Button Text="Mount SD Card" 
+                                Command="{Binding MountSdCommand}"
+                                IsEnabled="{Binding IsConnected}"
+                                BackgroundColor="#4caf50" TextColor="White" 
+                                FontAttributes="Bold" Padding="30,10" CornerRadius="8"/>
+                        
+                        <Label IsVisible="{Binding IsConnected, Converter={StaticResource InverseBoolConverter}}" 
+                               Text="(Connect to hardware first)" TextColor="#c62828" FontSize="12" HorizontalOptions="Center"/>
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Remote Controls (Visible when mounted) -->
+                <HorizontalStackLayout Grid.Row="1" Spacing="10" Margin="0,0,0,10" IsVisible="{Binding IsSdMounted}">
                     <Button Text="Upload" Command="{Binding UploadFileCommand}" 
                             IsEnabled="{Binding CanModifyRemoteFs}"
                             BackgroundColor="#0078d4" TextColor="White" Padding="15,0" HeightRequest="36" />
@@ -170,25 +191,60 @@
                     <Button Text="Refresh" Command="{Binding RefreshRemoteFilesCommand}" 
                             IsEnabled="{Binding IsConnected}"
                             BackgroundColor="#008080" TextColor="White" Padding="15,0" HeightRequest="36" />
+                    <Button Text="Unmount" Command="{Binding UnmountSdCommand}" 
+                            IsEnabled="{Binding IsSdMounted}"
+                            BackgroundColor="#2c3e50" TextColor="White" Padding="15,0" HeightRequest="36" />
+                    <Button Text="Scrape All" Command="{Binding ScrapeBoxArtCommand}" 
+                            IsEnabled="{Binding IsSdMounted}"
+                            BackgroundColor="#673ab7" TextColor="White" Padding="15,0" HeightRequest="36" 
+                            ToolTipProperties.Text="Identify ROMs and download official box art"/>
+                    <Button Text="Scrape Selected" Command="{Binding ScrapeSelectedCommand}" 
+                            IsEnabled="{Binding IsSdMounted}"
+                            BackgroundColor="#512da8" TextColor="White" Padding="15,0" HeightRequest="36" 
+                            ToolTipProperties.Text="Identify and scrape only checked items"/>
                     <Button Text="Delete" Command="{Binding DeleteSelectedCommand}" 
                             IsEnabled="{Binding CanModifyRemoteFs}"
                             BackgroundColor="#c62828" TextColor="White" Padding="15,0" HeightRequest="36" />
                 </HorizontalStackLayout>
 
-                <Border Grid.Row="2" BackgroundColor="#252525" StrokeShape="RoundRectangle 8">
+                <Border Grid.Row="2" BackgroundColor="#252525" StrokeShape="RoundRectangle 8" IsVisible="{Binding IsSdMounted}">
                     <CollectionView ItemsSource="{Binding RemoteFiles}">
                         <CollectionView.ItemTemplate>
                             <DataTemplate x:DataType="models:FileItem">
-                                <Grid ColumnDefinitions="30, 25, *, Auto, Auto, Auto, Auto" Padding="10,5">
+                                <Grid ColumnDefinitions="30, 25, *, Auto, Auto, Auto, Auto, Auto" Padding="10,5">
                                     <CheckBox IsChecked="{Binding IsSelected}" VerticalOptions="Center" 
                                               IsVisible="{Binding Name, Converter={StaticResource NotParentDirConverter}}"/>
                                     
-                                    <Label Grid.Column="1" Text="&#xED25;" FontFamily="Segoe MDL2 Assets" IsVisible="{Binding IsDirectory}" VerticalOptions="Center" TextColor="#FFD700">
-                                        <Label.GestureRecognizers>
-                                            <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=NavigateRemoteCommand}" CommandParameter="{Binding .}"/>
-                                        </Label.GestureRecognizers>
-                                    </Label>
-                                    <Label Grid.Column="1" Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" IsVisible="{Binding IsDirectory, Converter={StaticResource InverseBoolConverter}}" VerticalOptions="Center" TextColor="#E0E0E0"/>
+                                    <Grid Grid.Column="1" VerticalOptions="Center" HorizontalOptions="Center">
+                                        <!-- Folder Icon -->
+                                        <Label Text="&#xED25;" FontFamily="Segoe MDL2 Assets" 
+                                               IsVisible="{Binding IsDirectory}" 
+                                               TextColor="#FFD700">
+                                            <Label.GestureRecognizers>
+                                                <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=NavigateRemoteCommand}" CommandParameter="{Binding .}"/>
+                                            </Label.GestureRecognizers>
+                                        </Label>
+
+                                        <!-- Box Art Thumbnail (if available) -->
+                                        <Border IsVisible="{Binding BoxArtPath, Converter={StaticResource IsNullConverter}, ConverterParameter=invert}"
+                                                WidthRequest="24" HeightRequest="24" StrokeShape="RoundRectangle 2" StrokeThickness="1" Stroke="#ffd700">
+                                            <Image Source="{Binding BoxArtPath}" Aspect="AspectFill" />
+                                            <Border.GestureRecognizers>
+                                                <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=ShowBoxArtPreviewCommand}" CommandParameter="{Binding .}"/>
+                                            </Border.GestureRecognizers>
+                                        </Border>
+
+                                        <!-- File Icon (fallback if no box art) -->
+                                        <Label Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" 
+                                               IsVisible="{Binding BoxArtPath, Converter={StaticResource IsNullConverter}}" 
+                                               TextColor="#E0E0E0">
+                                            <Label.Triggers>
+                                                <DataTrigger TargetType="Label" Binding="{Binding IsDirectory}" Value="True">
+                                                    <Setter Property="IsVisible" Value="False" />
+                                                </DataTrigger>
+                                            </Label.Triggers>
+                                        </Label>
+                                    </Grid>
                                     
                                     <Label Grid.Column="2" Text="{Binding Name}" TextColor="White" VerticalOptions="Center" Margin="5,0,0,0">
                                         <Label.GestureRecognizers>
@@ -206,7 +262,15 @@
                                             Padding="0" WidthRequest="30" HeightRequest="25" FontSize="14"
                                             ToolTipProperties.Text="Rename"/>
  
-                                    <Button Grid.Column="5" Text="&#xE112;" FontFamily="Segoe MDL2 Assets" 
+                                    <Button Grid.Column="5" Text="&#xE8DE;" FontFamily="Segoe MDL2 Assets" 
+                                            Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=MoveRemoteFileCommand}"
+                                            CommandParameter="{Binding .}"
+                                            IsEnabled="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=CanModifyRemoteFs}"
+                                            BackgroundColor="Transparent" TextColor="#2196f3"
+                                            Padding="0" WidthRequest="30" HeightRequest="25" FontSize="14"
+                                            ToolTipProperties.Text="Move to..."/>
+ 
+                                    <Button Grid.Column="6" Text="&#xE112;" FontFamily="Segoe MDL2 Assets" 
                                             IsVisible="{Binding IsDirectory, Converter={StaticResource InverseBoolConverter}}"
                                             Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=DownloadRemoteFileItemCommand}"
                                             CommandParameter="{Binding .}"
@@ -214,8 +278,8 @@
                                             BackgroundColor="Transparent" TextColor="#4caf50"
                                             Padding="0" WidthRequest="30" HeightRequest="25" FontSize="14"
                                             ToolTipProperties.Text="Quick Download to PC"/>
-
-                                    <Button Grid.Column="6" Text="&#xE118;" FontFamily="Segoe MDL2 Assets" 
+ 
+                                    <Button Grid.Column="7" Text="&#xE118;" FontFamily="Segoe MDL2 Assets" 
                                             IsVisible="{Binding IsDirectory, Converter={StaticResource InverseBoolConverter}}"
                                             Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MainViewModel}}, Path=DownloadFileCommand}"
                                             CommandParameter="{Binding .}"
@@ -267,6 +331,49 @@
                         </Grid>
                     </VerticalStackLayout>
                 </Border>
+            </VerticalStackLayout>
+        </Border>
+
+        <!-- Box Art Preview Overlay -->
+        <Border IsVisible="{Binding CurrentBoxArtPreview, Converter={StaticResource IsNullConverter}, ConverterParameter=invert}"
+                BackgroundColor="#EE000000" StrokeThickness="0">
+            <Border.GestureRecognizers>
+                <TapGestureRecognizer Command="{Binding CloseBoxArtPreviewCommand}" />
+            </Border.GestureRecognizers>
+            <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center" Spacing="20">
+                <Border BackgroundColor="#2a2a2a" Padding="20" StrokeShape="RoundRectangle 12" StrokeThickness="2" Stroke="#ffd700" WidthRequest="900">
+                    <Grid RowDefinitions="Auto, *">
+                        <!-- Header / Close -->
+                        <Button Grid.Row="0" Text="&#xE106;" FontFamily="Segoe MDL2 Assets" 
+                                Command="{Binding CloseBoxArtPreviewCommand}"
+                                BackgroundColor="#c62828" TextColor="White" 
+                                WidthRequest="32" HeightRequest="32" CornerRadius="16"
+                                HorizontalOptions="End" VerticalOptions="Start" Margin="0,0,0,10" />
+
+                        <Grid Grid.Row="1" ColumnDefinitions="Auto, *" ColumnSpacing="30">
+                            <!-- Left: Image -->
+                            <Image Grid.Column="0" Source="{Binding CurrentBoxArtPreview}" 
+                                   HeightRequest="400" WidthRequest="500" Aspect="AspectFit" />
+                            
+                            <!-- Right: Description -->
+                            <VerticalStackLayout Grid.Column="1" Spacing="15" 
+                                                 IsVisible="{Binding CurrentDescription, Converter={StaticResource IsNullConverter}, ConverterParameter=invert}">
+                                <Label Text="Description" FontSize="22" FontAttributes="Bold" TextColor="#ffd700" />
+                                <Border BackgroundColor="#111111" Padding="15" StrokeShape="RoundRectangle 8" StrokeThickness="1" Stroke="#444444">
+                                    <ScrollView HeightRequest="320">
+                                        <Label Text="{Binding CurrentDescription}" FontSize="16" LineHeight="1.4" TextColor="White" />
+                                    </ScrollView>
+                                </Border>
+                            </VerticalStackLayout>
+
+                            <!-- Fallback if no description -->
+                            <Label Grid.Column="1" Text="No description available for this ROM." 
+                                   VerticalOptions="Center" HorizontalOptions="Center" TextColor="#666"
+                                   IsVisible="{Binding CurrentDescription, Converter={StaticResource IsNullConverter}}" />
+                        </Grid>
+                    </Grid>
+                </Border>
+                <Label Text="Click anywhere to close" TextColor="#aaaaaa" HorizontalOptions="Center" FontSize="14" />
             </VerticalStackLayout>
         </Border>
 

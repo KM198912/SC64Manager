@@ -8,8 +8,22 @@ public class SettingsService
     private const string FirmwarePathKey = "default_firmware_path";
     private const string SelectedPortKey = "last_selected_port";
     private const string DeployerPathKey = "sc64_deployer_path";
+    private const string GamesDbApiKeyKey = "gamesdb_api_key";
+    private const string FallbackEnabledKey = "metadata_fallback_enabled";
 
     private string GetDefaultPath(string subFolder) => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "SC64Manager", subFolder);
+
+    public string GamesDbApiKey
+    {
+        get => Preferences.Default.Get(GamesDbApiKeyKey, string.Empty);
+        set => Preferences.Default.Set(GamesDbApiKeyKey, value);
+    }
+
+    public bool MetadataFallbackEnabled
+    {
+        get => Preferences.Default.Get(FallbackEnabledKey, false);
+        set => Preferences.Default.Set(FallbackEnabledKey, value);
+    }
 
     public string DefaultRomPath
     {

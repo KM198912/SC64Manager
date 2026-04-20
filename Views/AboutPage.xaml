@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:NetGui.ViewModels"
              x:Class="NetGui.Views.AboutPage"
+             x:DataType="vm:MainViewModel"
              BackgroundColor="#1a1a1a"
              Title="About SC64 Manager">
     
@@ -21,7 +23,7 @@
                    TextColor="White"
                    HorizontalOptions="Center" />
 
-            <Label Text="Version 2.0.2 (Codename: Guardian of the Editors)"
+            <Label Text="Version 2.1.0 (Codename: Hardware Sentinel)"
                    FontSize="14"
                    TextColor="#888888"
                    HorizontalOptions="Center" />
@@ -59,6 +61,13 @@
                         BackgroundColor="#252525"
                         TextColor="White"
                         Padding="20,10" />
+
+                <Button Text="View Help &amp; Documentation"
+                        Command="{Binding OpenHelpCommand}"
+                        BackgroundColor="#0078d4"
+                        TextColor="White"
+                        FontAttributes="Bold"
+                        Padding="20,10" />
             </VerticalStackLayout>
 
             <Label Text="Hardware designed by Polprzewodnikowy"
@@ -66,7 +75,19 @@
                    TextColor="#888888"
                    HorizontalOptions="Center"
                    Margin="0,30,0,0" />
-
+            <Label Text="Not Affiliated with SummerCart64"
+                   FontSize="14"
+                   FontAttributes="Bold"
+                   TextColor="#bdc3c7"
+                   HorizontalOptions="Center"
+                   Margin="0,30,0,5" />
+            <Label Text="This project is an independent hobby project created to make managing the SummerCart64 easier. It is not affiliated with, endorsed by, or associated with the official SummerCart64 hardware developers."
+                   FontSize="12"
+                   TextColor="#888888"
+                   HorizontalTextAlignment="Center"
+                   HorizontalOptions="Center"
+                   MaximumWidthRequest="400"
+                   Margin="0,0,0,30" />
         </VerticalStackLayout>
     </ScrollView>
 </ContentPage>

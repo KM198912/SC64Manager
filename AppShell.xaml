@@ -19,14 +19,30 @@
                             Clicked="OnExitClicked" />
         </MenuBarItem>
         <MenuBarItem Text="Help">
+            <MenuFlyoutItem Text="Help Contents (GitHub)"
+                            Command="{Binding OpenHelpCommand}" />
+            <MenuFlyoutSeparator />
             <MenuFlyoutItem Text="About SC64 Manager"
                             Command="{Binding GoToAboutCommand}" />
         </MenuBarItem>
     </Shell.MenuBarItems>
 
-    <ShellContent
-        Title="Home"
-        ContentTemplate="{DataTemplate local:MainPage}"
-        Route="MainPage" />
+    <TabBar>
+        <Tab Title="File Manager" Icon="home.png">
+            <ShellContent
+                ContentTemplate="{DataTemplate local:MainPage}"
+                Route="MainPage" />
+        </Tab>
+        <Tab Title="Hardware Health" Icon="health.png">
+            <ShellContent
+                ContentTemplate="{DataTemplate views:HardwarePage}"
+                Route="HardwarePage" />
+        </Tab>
+        <Tab Title="Memory Viewer" Icon="sc64.png">
+            <ShellContent
+                ContentTemplate="{DataTemplate views:MemoryPage}"
+                Route="MemoryPage" />
+        </Tab>
+    </TabBar>
 
 </Shell>

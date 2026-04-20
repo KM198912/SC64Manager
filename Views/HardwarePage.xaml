@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:NetGui.ViewModels"
+             x:Class="NetGui.Views.HardwarePage"
+             x:DataType="vm:MainViewModel"
+             Title="Hardware Health">
+
+    <ScrollView>
+        <VerticalStackLayout Spacing="25" Padding="30">
+            
+            <Label Text="Cartridge Health &amp; Diagnostics"
+                   FontSize="32"
+                   FontAttributes="Bold"
+                   TextColor="{StaticResource Primary}"/>
+
+            <!-- Dashboard Grid -->
+            <Grid ColumnDefinitions="*, *" RowDefinitions="Auto, Auto" ColumnSpacing="20" RowSpacing="20">
+                
+                <!-- Voltage Card -->
+                <Border Grid.Row="0" Grid.Column="0" BackgroundColor="#1a1a1a" Stroke="#333" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="20">
+                    <VerticalStackLayout Spacing="5" HorizontalOptions="Center">
+                        <Label Text="POWER SUPPLY" FontSize="12" TextColor="#888" HorizontalOptions="Center"/>
+                        <Label Text="{Binding HardwareVoltage}" 
+                               FontSize="36" 
+                               FontAttributes="Bold" 
+                               TextColor="#4caf50"
+                               HorizontalOptions="Center"/>
+                        <Label Text="VCC (3.3V Rail)" FontSize="10" TextColor="#555" HorizontalOptions="Center"/>
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Temperature Card -->
+                <Border Grid.Row="0" Grid.Column="1" BackgroundColor="#1a1a1a" Stroke="#333" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="20">
+                    <VerticalStackLayout Spacing="5" HorizontalOptions="Center">
+                        <Label Text="CORE TEMPERATURE" FontSize="12" TextColor="#888" HorizontalOptions="Center"/>
+                        <Label Text="{Binding HardwareTemperature}" 
+                               FontSize="36" 
+                               FontAttributes="Bold" 
+                               TextColor="#ff9800"
+                               HorizontalOptions="Center"/>
+                        <Label Text="Internal FPGA Sensor" FontSize="10" TextColor="#555" HorizontalOptions="Center"/>
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- CIC Status Card -->
+                <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" BackgroundColor="#1a1a1a" Stroke="#333" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="20">
+                    <HorizontalStackLayout Spacing="20" HorizontalOptions="Center">
+                        <VerticalStackLayout VerticalOptions="Center">
+                            <Label Text="N64 CIC HANDSHAKE" FontSize="12" TextColor="#888"/>
+                            <Label Text="{Binding HardwareCicStatus}" FontSize="20" FontAttributes="Bold" TextColor="White"/>
+                        </VerticalStackLayout>
+                        <BoxView WidthRequest="1" Color="#444" VerticalOptions="Fill" Margin="10,0"/>
+                        <VerticalStackLayout VerticalOptions="Center">
+                            <Label Text="LIVE STATUS" FontSize="12" TextColor="#888"/>
+                            <Label Text="{Binding StatusTextN64}" FontSize="20" FontAttributes="Bold" TextColor="{Binding StatusColor}"/>
+                        </VerticalStackLayout>
+                    </HorizontalStackLayout>
+                </Border>
+
+            </Grid>
+
+            <!-- RTC Section -->
+            <Border BackgroundColor="#1a1a1a" Stroke="#333" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="20">
+                <VerticalStackLayout Spacing="15">
+                    <Label Text="Real-Time Clock (RTC)" FontSize="18" FontAttributes="Bold" TextColor="White"/>
+                    
+                    <Grid ColumnDefinitions="*, Auto" ColumnSpacing="20">
+                        <VerticalStackLayout Grid.Column="0">
+                            <Label Text="Cartridge Current Time:" FontSize="12" TextColor="#888"/>
+                            <Label Text="{Binding HardwareRtcTime}" FontSize="24" FontAttributes="Bold" TextColor="#2196f3"/>
+                            <Label Text="{Binding HardwareRtcStatus}" FontSize="11" FontAttributes="Italic" TextColor="#4caf50" Margin="0,2,0,0"/>
+                        </VerticalStackLayout>
+                        
+                        <Button Grid.Column="1"
+                                Text="Sync to PC"
+                                Command="{Binding SyncRtcCommand}"
+                                VerticalOptions="Center"
+                                BackgroundColor="#2196f3"/>
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+
+            <Label Text="Values are polled every 2 seconds while connected." 
+                   HorizontalOptions="Center" 
+                   FontSize="12" 
+                   TextColor="#666" 
+                   Margin="0,20,0,0"/>
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

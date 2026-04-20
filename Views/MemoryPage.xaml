@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:NetGui.ViewModels"
+             x:Class="NetGui.Views.MemoryPage"
+             x:DataType="vm:MemoryViewModel"
+             BackgroundColor="#1a1a1a"
+             Title="Memory Viewer">
+
+    <ContentPage.Resources>
+        <Style x:Key="MonoText" TargetType="Label">
+            <Setter Property="FontFamily" Value="Courier New" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="TextColor" Value="#bdc3c7" />
+            <Setter Property="VerticalTextAlignment" Value="Center" />
+        </Style>
+    </ContentPage.Resources>
+
+    <Grid RowDefinitions="Auto, *">
+        <!-- Toolbar -->
+        <Border Grid.Row="0" BackgroundColor="#252525" Padding="15" StrokeThickness="0">
+            <HorizontalStackLayout Spacing="15" VerticalOptions="Center">
+                <VerticalStackLayout Spacing="2">
+                    <Label Text="Address (Hex):" TextColor="#888" FontSize="11" />
+                    <Entry Text="{Binding AddressInput}" 
+                           Placeholder="00000000" 
+                           WidthRequest="120" 
+                           TextColor="White"
+                           BackgroundColor="#1a1a1a" />
+                </VerticalStackLayout>
+
+                <Button Text="Jump" 
+                        Command="{Binding JumpToAddressCommand}"
+                        BackgroundColor="#0078d4" 
+                        TextColor="White" 
+                        CornerRadius="4" 
+                        HeightRequest="40"
+                        Margin="0,15,0,0" />
+
+                <VerticalStackLayout Spacing="2">
+                    <Label Text="Region Preset:" TextColor="#888" FontSize="11" />
+                    <Picker ItemsSource="{Binding Presets}" 
+                            SelectedItem="{Binding SelectedPreset}"
+                            TextColor="White"
+                            BackgroundColor="#1a1a1a"
+                            WidthRequest="200" />
+                </VerticalStackLayout>
+
+                <Button Text="Refresh" 
+                        Command="{Binding RefreshCommand}"
+                        BackgroundColor="#252525" 
+                        BorderColor="#444"
+                        BorderWidth="1"
+                        TextColor="White"
+                        HeightRequest="40"
+                        Margin="0,15,0,0" />
+
+                <VerticalStackLayout Spacing="0" VerticalOptions="Center" Margin="10,13,0,0">
+                    <HorizontalStackLayout Spacing="5">
+                        <Label Text="Auto-Refresh (1s):" TextColor="White" VerticalOptions="Center" />
+                        <Switch IsToggled="{Binding IsAutoRefresh}" OnColor="#0078d4" VerticalOptions="Center" />
+                    </HorizontalStackLayout>
+                </VerticalStackLayout>
+                
+                <ActivityIndicator IsRunning="{Binding IsBusy}" Color="#0078d4" WidthRequest="30" HeightRequest="30" Margin="10,15,0,0" />
+            </HorizontalStackLayout>
+        </Border>
+
+        <!-- Memory Grid -->
+        <Grid Grid.Row="1" ColumnDefinitions="Auto, *, Auto" Padding="10">
+            <CollectionView ItemsSource="{Binding MemoryRows}" 
+                            Grid.ColumnSpan="3">
+                <CollectionView.Header>
+                    <Grid ColumnDefinitions="100, *, 150" Padding="5" BackgroundColor="#222">
+                        <Label Text="Address" FontAttributes="Bold" TextColor="White" Grid.Column="0" Margin="5,0"/>
+                        <Label Text="Hexadecimal Data" FontAttributes="Bold" TextColor="White" Grid.Column="1" HorizontalTextAlignment="Center"/>
+                        <Label Text="ASCII" FontAttributes="Bold" TextColor="White" Grid.Column="2" HorizontalTextAlignment="Center"/>
+                    </Grid>
+                </CollectionView.Header>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:MemoryRow">
+                        <Border BackgroundColor="Transparent" Padding="5" StrokeThickness="0" Margin="0,1">
+                            <Grid ColumnDefinitions="100, *, 150">
+                                <Label Text="{Binding Address}" Style="{StaticResource MonoText}" Grid.Column="0" TextColor="#2196f3" Margin="5,0"/>
+                                <Label Text="{Binding HexData}" Style="{StaticResource MonoText}" Grid.Column="1" HorizontalTextAlignment="Start" Margin="10,0"/>
+                                <Label Text="{Binding AsciiData}" Style="{StaticResource MonoText}" Grid.Column="2" TextColor="#4caf50" Margin="5,0"/>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+
+            <!-- Floating Paging buttons -->
+            <VerticalStackLayout Grid.Column="2" VerticalOptions="End" Margin="0,0,20,20" Spacing="10">
+                <Button Text="▲" Command="{Binding PageUpCommand}" BackgroundColor="#333" WidthRequest="45" HeightRequest="45" CornerRadius="22" />
+                <Button Text="▼" Command="{Binding PageDownCommand}" BackgroundColor="#333" WidthRequest="45" HeightRequest="45" CornerRadius="22" />
+            </VerticalStackLayout>
+        </Grid>
+    </Grid>
+</ContentPage>

@@ -94,15 +94,56 @@ public class SC64Device : IDisposable
             {
                 byte[] respHeader = new byte[8];
                 int read = 0;
-                while (read < 8)
+                var timeout = DateTime.Now.AddMilliseconds(2000); 
+
+                // 1. Sliding Window Sync: Find the start of a valid packet marker (C, E, or P)
+                bool synced = false;
+                while (!synced && DateTime.Now < timeout)
                 {
-                    int r = _serial.Read(respHeader, read, 8 - read);
-                    if (r == 0) return (true, null);
-                    read += r;
+                    if (_serial.BytesToRead > 0)
+                    {
+                        byte b = (byte)_serial.ReadByte();
+                        if (b == (byte)'C' || b == (byte)'E' || b == (byte)'P')
+                        {
+                            respHeader[0] = b;
+                            synced = true;
+                        }
+                    }
+                    else { Thread.Sleep(1); }
                 }
+
+                if (!synced) return (true, null); // Final timeout
+
+                // 2. Acquisition: Read the remaining 7 bytes of the header
+                read = 1;
+                while (read < 8 && DateTime.Now < timeout)
+                {
+                    if (_serial.BytesToRead > 0)
+                    {
+                        read += _serial.Read(respHeader, read, 8 - read);
+                    }
+                    else { Thread.Sleep(1); }
+                }
+
+                if (read < 8) return (true, null);
 
                 string ident = Encoding.ASCII.GetString(respHeader, 0, 3);
                 uint dataLen = ReadUInt32BE(respHeader, 4);
+
+                // Protocol Sanity Check: Ident must be CMP, ERR or PKT
+                if (ident != "CMP" && ident != "ERR" && ident != "PKT")
+                {
+                    // Still garbage: Try again
+                    pktRetries++; 
+                    continue; 
+                }
+
+                // Safety Limit: Prevent OutOfMemory by capping allocations at 4MB
+                if (dataLen > 4 * 1024 * 1024)
+                {
+                    _serial.DiscardInBuffer();
+                    return (true, null);
+                }
 
                 if (ident == "PKT")
                 {
@@ -111,7 +152,11 @@ public class SC64Device : IDisposable
                     {
                         byte[] junk = new byte[dataLen];
                         int jRead = 0;
-                        while(jRead < (int)dataLen) jRead += _serial.Read(junk, jRead, (int)dataLen - jRead);
+                        while(jRead < (int)dataLen && DateTime.Now < timeout)
+                        {
+                            if (_serial.BytesToRead > 0) 
+                                jRead += _serial.Read(junk, jRead, (int)dataLen - jRead);
+                        }
                     }
                     continue; 
                 }
@@ -121,23 +166,38 @@ public class SC64Device : IDisposable
                 {
                     byte[] respData = new byte[dataLen];
                     int dataRead = 0;
-                    while (dataRead < (int)dataLen)
+                    while (dataRead < (int)dataLen && DateTime.Now < timeout)
                     {
-                        dataRead += _serial.Read(respData, dataRead, (int)dataLen - dataRead);
+                        if (_serial.BytesToRead > 0)
+                            dataRead += _serial.Read(respData, dataRead, (int)dataLen - dataRead);
                     }
+                    if (dataRead < (int)dataLen) return (true, null); // Partial read timeout
                     return (isError, respData);
                 }
                 return (isError, Array.Empty<byte>());
             }
             return (true, null); // Hit retry limit
         }
-        catch { return (true, null); }
-        finally { _serialLock.Release(); }
+        catch (Exception)
+        {
+            return (true, null);
+        }
+        finally
+        {
+            if (_serialLock.CurrentCount == 0) _serialLock.Release();
+        }
+    }
+
+    public bool SdDeinit(bool force = false)
+    {
+        if (force) return true;
+        var (err, _) = ExecuteCmd('i', 0, 0);
+        return !err;
     }
 
     public string GetIdentifier()
     {
-        var (err, data) = ExecuteCmd('v');
+        var (err, data) = ExecuteCmd('v'); // Official IDENTIFIER_GET
         if (err || data == null) return "Unknown";
         return Encoding.ASCII.GetString(data).TrimEnd('\0');
     }
@@ -176,6 +236,63 @@ public class SC64Device : IDisposable
         var (err, data) = ExecuteCmd('?');
         if (err || data == null || data.Length < 8) return 0; // 0 = Unavailable
         return (byte)((data[7] >> 4) & 0x0F);
+    }
+
+    public (float voltage, float temperature) GetDiagnosticData()
+    {
+        var (err, data) = ExecuteCmd('%');
+        if (err || data == null || data.Length < 16) return (0, 0);
+
+        uint rawVersion = ReadUInt32BE(data, 0);
+        bool isVersioned = (rawVersion & (1u << 31)) != 0;
+        uint version = rawVersion & ~(1u << 31);
+
+        if (isVersioned && version == 1)
+        {
+            // V2 Protocol (Versioned V1)
+            float v = ReadUInt32BE(data, 4) / 1000.0f;
+            float t = ReadUInt32BE(data, 8) / 10.0f;
+            return (v, t);
+        }
+
+        return (0, 0);
+    }
+
+    public DateTime? GetRtcTime()
+    {
+        var (err, data) = ExecuteCmd('t');
+        if (err || data == null || data.Length < 8) return null;
+
+        try
+        {
+            int second = FromBcd(data[3]);
+            int minute = FromBcd(data[2]);
+            int hour = FromBcd(data[1]);
+            int day = FromBcd(data[7]);
+            int month = FromBcd(data[6]);
+            int year = 1900 + (FromBcd(data[4]) * 100) + FromBcd(data[5]);
+
+            return new DateTime(year, month, day, hour, minute, second);
+        }
+        catch { return null; }
+    }
+
+    public bool SetRtcTime(DateTime dt)
+    {
+        byte second = ToBcd((byte)dt.Second);
+        byte minute = ToBcd((byte)dt.Minute);
+        byte hour = ToBcd((byte)dt.Hour);
+        byte day = ToBcd((byte)dt.Day);
+        byte month = ToBcd((byte)dt.Month);
+        byte year = ToBcd((byte)(dt.Year % 100));
+        byte century = ToBcd((byte)((dt.Year - 1900) / 100));
+        byte weekday = ToBcd((byte)((int)dt.DayOfWeek + 1));
+
+        uint arg0 = (uint)((weekday << 24) | (hour << 16) | (minute << 8) | second);
+        uint arg1 = (uint)((century << 24) | (year << 16) | (month << 8) | day);
+
+        var (err, _) = ExecuteCmd('T', arg0, arg1);
+        return !err;
     }
 
     public (bool success, uint status) SdInit()
@@ -226,6 +343,9 @@ public class SC64Device : IDisposable
     {
         return (uint)((data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3]);
     }
+
+    private static byte ToBcd(byte value) => (byte)((value / 10 << 4) | (value % 10));
+    private static byte FromBcd(byte value) => (byte)((value >> 4) * 10 + (value & 0x0F));
 
     public void Dispose()
     {
