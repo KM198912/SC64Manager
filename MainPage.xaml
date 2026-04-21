@@ -172,9 +172,15 @@
                         <Button Text="Mount SD Card" 
                                 Command="{Binding MountSdCommand}"
                                 IsEnabled="{Binding IsConnected}"
+                                IsVisible="{Binding IsN64PoweredOn, Converter={StaticResource InverseBoolConverter}}"
                                 BackgroundColor="#4caf50" TextColor="White" 
                                 FontAttributes="Bold" Padding="30,10" CornerRadius="8"/>
                         
+                        <Label IsVisible="{Binding IsN64PoweredOn}" 
+                               Text="⚠️ SD Management Restricted" FontAttributes="Bold" TextColor="#ff8c00" HorizontalOptions="Center"/>
+                        <Label IsVisible="{Binding IsN64PoweredOn}" 
+                               Text="Power OFF the N64 console to enable filesystem access." TextColor="#bbbbbb" FontSize="12" HorizontalOptions="Center"/>
+
                         <Label IsVisible="{Binding IsConnected, Converter={StaticResource InverseBoolConverter}}" 
                                Text="(Connect to hardware first)" TextColor="#c62828" FontSize="12" HorizontalOptions="Center"/>
                     </VerticalStackLayout>
