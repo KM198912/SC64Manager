@@ -23,7 +23,7 @@
                    TextColor="White"
                    HorizontalOptions="Center" />
 
-            <Label Text="Version 2.2.0 (Codename: The Artistic Update)"
+            <Label Text="Version 2.2.1 (Codename: The Carousel Update)"
                    FontSize="14"
                    TextColor="#888888"
                    HorizontalOptions="Center" />

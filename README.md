@@ -21,7 +21,23 @@ The communication engine is optimized for high-speed serial transfers at **1,000
 - **Pretty Titles**: Gui Generates a titles.txt file, which is used by the SC64 Menu to display the title of the game instead of the filename. (Needs Modded sc64menu.n64) [KM198912/SC64Menu](https://github.com/KM198912/SC64Menu)
 - **SD Card Management**: Decoupled SD management from Connection Status
 - **Hardware Page**: Added a page to view the hardware information of the SC64, like Voltage, Temperature, CIC Handshake
-- **IMPORTANT NOTE**: You are NOT required to use my modded sc64menu.n64, you can use the original one, but then Advanced Features like Pretty Titles, BGM, Descriptions will not work, but the core features remain functional!
+
+### Menu Compatibility
+
+This GUI works with both the original SC64Menu and my modified version.
+
+- Original SC64Menu:
+  - Fully supported
+  - Recommended if you prefer the stock experience
+
+- Modified SC64Menu (optional):
+  - Enables additional features:
+    - Pretty Titles (titles.txt)
+    - Game Descriptions (description.txt)
+    - Background Music (apparently was planned in the original SC64Menu but never implemented, i couldnt find it atleast)
+    - Carousel Mode (requires Expansion Pak)
+
+These features are purely optional. If you use the original menu, everything else in the GUI works as expected.
 
 
 ### 🛰️ Automated Firmware Management
