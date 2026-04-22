@@ -67,11 +67,13 @@ public class GamesDbService
                 return null;
             }
 
-            // Intelligence Pass: Scour results and pick the one with the best description 
-            // (Avoids variants like "Player's Choice" that often have empty overviews)
+            // Intelligence Pass: Prioritize title accuracy and official baseline releases
+            // (Avoids modern mod descriptions or variants hijacking the search results)
             var game = response.Data.Games
-                .OrderByDescending(g => g.Description?.Length ?? 0)
-                .ThenBy(g => g.Title?.Length ?? 0)
+                .OrderByDescending(g => string.Equals(g.Title, query, StringComparison.OrdinalIgnoreCase))
+                .ThenByDescending(g => !string.IsNullOrEmpty(g.Description))
+                .ThenBy(g => g.Title?.Length ?? int.MaxValue) // Prefer "Banjo-Kazooie" over "Banjo-Kazooie (Platinum Hits)"
+                .ThenByDescending(g => g.Description?.Length ?? 0) // Finally, pick the most detailed official entry
                 .FirstOrDefault();
 
             if (game == null) return null;

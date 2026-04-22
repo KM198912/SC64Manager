@@ -133,8 +133,17 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     public partial string CurrentLocalPath { get; set; } = string.Empty;
 
-    public string DefaultFirmwarePath => _settings.DefaultFirmwarePath;
-    public string DefaultRomPath => _settings.DefaultRomPath;
+    public string DefaultFirmwarePath
+    {
+        get => _settings.DefaultFirmwarePath;
+        set { _settings.DefaultFirmwarePath = value; OnPropertyChanged(); }
+    }
+
+    public string DefaultRomPath
+    {
+        get => _settings.DefaultRomPath;
+        set { _settings.DefaultRomPath = value; OnPropertyChanged(); }
+    }
     
     public string DeployerPath 
     {
@@ -189,6 +198,15 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     public partial string MusicStatus { get; set; } = "Unknown (Check required)";
+
+    [ObservableProperty]
+    public partial bool IsPal60Enabled { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsPal60CompatEnabled { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsAutoloadEnabled { get; set; }
 
     public ObservableCollection<string> AvailablePorts { get; } 
     public ObservableCollection<FileItem> LocalFiles { get; } 
@@ -598,6 +616,7 @@ public partial class MainViewModel : ObservableObject
                 CurrentRemotePath = "/";
                 await RefreshRemoteFilesInternal();
                 await CheckMusicStatusAsync();
+                await LoadCartridgeConfigAsync();
             }
             else
             {
@@ -637,89 +656,204 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task SetMenuMusic()
     {
-        if (!IsSdMounted) 
-        {
-            Log("ERROR: SD card must be MOUNTED to set music.");
-            return;
-        }
+        if (!IsConnected || !IsSdMounted || IsBusy || IsN64PoweredOn) return;
 
         try
         {
-            var result = await FilePicker.Default.PickAsync(new PickOptions
-            {
-                PickerTitle = "Select Menu Background Music (.mp3)",
+            var result = await FilePicker.Default.PickAsync(new PickOptions { 
+                PickerTitle = "Select Background Music (MP3)",
                 FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>> {
-                    { DevicePlatform.WinUI, new[] { "*.mp3" } },
+                    { DevicePlatform.WinUI, new[] { ".mp3" } },
                     { DevicePlatform.macOS, new[] { "mp3" } }
                 })
             });
 
             if (result == null) return;
 
+            var fileInfo = new FileInfo(result.FullPath);
+            if (fileInfo.Length > 5 * 1024 * 1024) // 5MB Threshold
+            {
+                bool proceed = await Application.Current!.Windows[0].Page!.DisplayAlertAsync(
+                    "Large File Warning", 
+                    $"The selected MP3 ({FormatSize(fileInfo.Length)}) is quite large. This will significantly slow down the N64 boot time while the firmware scans the file.\n\nContinue anyway?", 
+                    "Yes", "Cancel");
+                if (!proceed) return;
+            }
+
             IsBusy = true;
-            Log($"Setting background music: {result.FileName}...");
+            ProgressValue = 0;
+            ProgressText = "Uploading BGM...";
+            Log($"UPLOADING: {result.FileName} to /menu/bg.mp3...");
 
             await Task.Run(() => {
-                try {
-                    if (!_fs.ListDir("/").Any(x => x.Name == "menu" && x.IsDirectory))
-                    {
-                        Log("Creating /menu directory...");
-                        _fs.CreateDirectory("/menu");
-                    }
-
-                    if (_fs.ListDir("/menu").Any(x => x.Name == "bg.mp3"))
-                    {
-                        Log("Overwriting existing bg.mp3...");
-                        _fs.DeleteFile("/menu/bg.mp3");
-                    }
-
-                    using var source = File.OpenRead(result.FullPath);
-                    using var dest = _fs.OpenFile("/menu/bg.mp3", FileMode.Create);
-                    Log("Uploading file to cartridge SD...");
-                    source.CopyTo(dest);
-                    Log("SUCCESS: Background music updated.");
-                }
-                catch (Exception ex) {
-                    Log($"Music Upload Error: {ex.Message}");
-                }
+                using var fs = File.OpenRead(result.FullPath);
+                using var dest = _fs.OpenFile("/menu/bg.mp3", FileMode.Create);
+                CopyStreamWithProgress(fs, dest, fs.Length);
             });
 
+            Log("SUCCESS: Background music updated.");
             await CheckMusicStatusAsync();
         }
+        catch (Exception ex) { Log($"BGM Upload Error: {ex.Message}"); }
         finally { IsBusy = false; }
     }
 
     [RelayCommand]
     private async Task RemoveMenuMusic()
     {
-        if (!IsSdMounted) return;
+        if (!IsConnected || !IsSdMounted || IsBusy || IsN64PoweredOn) return;
 
         IsBusy = true;
         try
         {
-            await Task.Run(() => {
-                if (_fs.ListDir("/menu").Any(x => x.Name == "bg.mp3"))
-                {
-                    _fs.DeleteFile("/menu/bg.mp3");
-                    Log("SUCCESS: Removed /menu/bg.mp3.");
-                }
-            });
+            Log("REMOVING: /menu/bg.mp3...");
+            await Task.Run(() => _fs.DeleteFile("/menu/bg.mp3"));
+            Log("SUCCESS: Background music removed.");
             await CheckMusicStatusAsync();
         }
+        catch (Exception ex) { Log($"BGM Remove Error: {ex.Message}"); }
         finally { IsBusy = false; }
     }
 
     private async Task CheckMusicStatusAsync()
     {
-        if (!IsSdMounted) return;
-        
-        await Task.Run(() => {
-            try {
-                bool exists = _fs.ListDir("/menu").Any(x => x.Name == "bg.mp3");
-                MusicStatus = exists ? "Active (/menu/bg.mp3)" : "Not Set";
+        if (!IsConnected || !IsSdMounted) 
+        {
+            MusicStatus = "SD Not Mounted";
+            return;
+        }
+
+        try
+        {
+            bool exists = await Task.Run(() => _fs.ListDir("/menu").Any(f => f.Name == "bg.mp3"));
+            MusicStatus = exists ? "Active (bg.mp3 present)" : "Ready (No music set)";
+        }
+        catch { MusicStatus = "Error checking status"; }
+    }
+
+    [RelayCommand]
+    public async Task LoadCartridgeConfigAsync()
+    {
+        if (!IsConnected || !IsSdMounted) return;
+
+        try
+        {
+            Log("Reading cartridge configuration (config.ini)...");
+            var content = await Task.Run(() => {
+                if (!_fs.ListDir("/menu").Any(f => f.Name == "config.ini")) return string.Empty;
+                using var stream = _fs.OpenFile("/menu/config.ini", FileMode.Open);
+                using var reader = new StreamReader(stream);
+                return reader.ReadToEnd();
+            });
+
+            if (string.IsNullOrEmpty(content))
+            {
+                Log("No existing config.ini found. Defaults will be used.");
+                return;
             }
-            catch { MusicStatus = "Error checking status"; }
-        });
+
+            var ini = new IniService();
+            ini.Load(content);
+
+            IsPal60Enabled = ini.GetBool("menu", "pal60", false);
+            IsPal60CompatEnabled = ini.GetBool("menu", "pal60_compatibility_mode", true);
+            IsAutoloadEnabled = ini.GetBool("menu", "autoload_rom_enabled", false);
+            
+            Log("SUCCESS: Remote configuration loaded.");
+        }
+        catch (Exception ex) { Log($"Config Load Error: {ex.Message}"); }
+    }
+
+    [RelayCommand]
+    public async Task SaveCartridgeConfigAsync()
+    {
+        if (!IsConnected || !IsSdMounted || IsBusy || IsN64PoweredOn) return;
+
+        IsBusy = true;
+        ProgressValue = 0;
+        ProgressText = "Saving Remote Config...";
+        Log("Updating cartridge config.ini...");
+
+        try
+        {
+            var ini = new IniService();
+            
+            // 1. Read existing to preserve other settings
+            var content = await Task.Run(() => {
+                if (!_fs.ListDir("/menu").Any(f => f.Name == "config.ini")) return string.Empty;
+                using var stream = _fs.OpenFile("/menu/config.ini", FileMode.Open);
+                using var reader = new StreamReader(stream);
+                return reader.ReadToEnd();
+            });
+
+            if (!string.IsNullOrEmpty(content)) ini.Load(content);
+
+            // 2. Overlay our values
+            ini.SetInt("menu", "schema_revision", 1); // Ensure valid schema
+            ini.SetBool("menu", "pal60", IsPal60Enabled);
+            ini.SetBool("menu", "pal60_compatibility_mode", IsPal60CompatEnabled);
+            ini.SetBool("menu", "autoload_rom_enabled", IsAutoloadEnabled);
+
+            // 3. Write back
+            await Task.Run(() => {
+                var newContent = ini.Save();
+                using var dest = _fs.OpenFile("/menu/config.ini", FileMode.Create);
+                using var writer = new StreamWriter(dest);
+                writer.Write(newContent);
+            });
+
+            Log("SUCCESS: config.ini synchronization complete.");
+            
+            _ = MainThread.InvokeOnMainThreadAsync(async () => {
+                await Application.Current!.Windows[0].Page!.DisplayAlertAsync("Success", "Configuration synchronized to cartridge successfully.", "OK");
+            });
+        }
+        catch (Exception ex) { Log($"Config Save Error: {ex.Message}"); }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand]
+    private async Task SetAsDefaultBootRom(FileItem item)
+    {
+        if (!IsConnected || !IsSdMounted || IsBusy || IsN64PoweredOn || item.IsDirectory) return;
+
+        IsBusy = true;
+        Log($"SETTING AUTOLOAD: {item.Name}...");
+        try
+        {
+            var ini = new IniService();
+            
+            // Load existing
+            var content = await Task.Run(() => {
+                if (!_fs.ListDir("/menu").Any(f => f.Name == "config.ini")) return string.Empty;
+                using var stream = _fs.OpenFile("/menu/config.ini", FileMode.Open);
+                using var reader = new StreamReader(stream);
+                return reader.ReadToEnd();
+            });
+            if (!string.IsNullOrEmpty(content)) ini.Load(content);
+
+            // Update autoload section
+            ini.SetBool("menu", "autoload_rom_enabled", true);
+            ini.SetString("autoload", "rom_path", CurrentRemotePath);
+            ini.SetString("autoload", "rom_filename", item.Name);
+
+            // Save back
+            await Task.Run(() => {
+                var newContent = ini.Save();
+                using var dest = _fs.OpenFile("/menu/config.ini", FileMode.Create);
+                using var writer = new StreamWriter(dest);
+                writer.Write(newContent);
+            });
+
+            IsAutoloadEnabled = true;
+            Log($"SUCCESS: {item.Name} set as cartridge default boot ROM.");
+            
+            await MainThread.InvokeOnMainThreadAsync(async () => {
+                await Application.Current!.Windows[0].Page!.DisplayAlertAsync("Autoload Set", $"{item.Name} will now boot automatically on power on.\n\nHold START at boot to bypass if needed.", "OK");
+            });
+        }
+        catch (Exception ex) { Log($"Autoload Error: {ex.Message}"); }
+        finally { IsBusy = false; }
     }
 
     [RelayCommand]
@@ -872,7 +1006,7 @@ public partial class MainViewModel : ObservableObject
                             if (descResponse.IsSuccessStatusCode)
                             {
                                 var descText = await descResponse.Content.ReadAsStringAsync();
-                                var wrappedText = WordWrap(descText, 60).Replace("\r\n", "\n");
+                                var wrappedText = "\n\n" + WordWrap(descText, 60).Replace("\r\n", "\n");
                                 string remoteTargetDesc = $"{metadataPath}/description.txt";
 
                                 await Task.Run(() => {
@@ -910,7 +1044,7 @@ public partial class MainViewModel : ObservableObject
                                     if (!string.IsNullOrEmpty(gdbMeta.Description))
                                     {
                                         var descText = gdbMeta.Description;
-                                        var wrappedText = WordWrap(descText, 60).Replace("\r\n", "\n");
+                                        var wrappedText = "\n\n" + WordWrap(descText, 60).Replace("\r\n", "\n");
                                         string remoteTargetDesc = $"{metadataPath}/description.txt";
                                         await Task.Run(() => {
                                             var encoding = new System.Text.UTF8Encoding(false);
@@ -973,7 +1107,7 @@ public partial class MainViewModel : ObservableObject
                     await Task.Run(() => {
                         if (!_fs.ListDir(metadataPath).Any(f => f.Name == "description.txt"))
                         {
-                            var wrappedText = WordWrap(rom.Description, 60).Replace("\r\n", "\n");
+                            var wrappedText = "\n\n" + WordWrap(rom.Description, 60).Replace("\r\n", "\n");
                             var encoding = new System.Text.UTF8Encoding(false);
                             byte[] descBytes = encoding.GetBytes(wrappedText);
                             using (var ms = new MemoryStream(descBytes))
@@ -1390,40 +1524,43 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task BrowseLocalPath()
     {
-        var result = await FolderPicker.Default.PickAsync(CancellationToken.None);
-        if (result.IsSuccessful)
+        try
         {
-            _settings.DefaultRomPath = result.Folder.Path;
-            CurrentLocalPath = result.Folder.Path;
-            OnPropertyChanged(nameof(DefaultRomPath));
+            var result = await FolderPicker.Default.PickAsync(CancellationToken.None);
+            if (result.IsSuccessful)
+            {
+                DefaultRomPath = result.Folder.Path;
+                CurrentLocalPath = DefaultRomPath;
+            }
         }
+        catch (Exception ex) { Log($"Picker Error: {ex.Message}"); }
     }
 
     [RelayCommand]
     private async Task BrowseFirmwarePath()
     {
-        var result = await FolderPicker.Default.PickAsync(CancellationToken.None);
-        if (result.IsSuccessful)
+        try
         {
-            _settings.DefaultFirmwarePath = result.Folder.Path;
-            OnPropertyChanged(nameof(DefaultFirmwarePath));
+            var result = await FolderPicker.Default.PickAsync(CancellationToken.None);
+            if (result.IsSuccessful) DefaultFirmwarePath = result.Folder.Path;
         }
+        catch (Exception ex) { Log($"Picker Error: {ex.Message}"); }
     }
 
     [RelayCommand]
     private async Task BrowseDeployerPath()
     {
-        var result = await FilePicker.Default.PickAsync(new PickOptions {
-            PickerTitle = "Select sc64deployer.exe",
-            FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>> {
-                { DevicePlatform.WinUI, new[] { ".exe" } }
-            })
-        });
-
-        if (result != null)
+        try
         {
-            DeployerPath = result.FullPath;
+            var result = await FilePicker.Default.PickAsync(new PickOptions { 
+                PickerTitle = "Select sc64deployer.exe",
+                FileTypes = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>> {
+                    { DevicePlatform.WinUI, new[] { ".exe" } }
+                })
+            });
+            if (result != null) DeployerPath = result.FullPath;
         }
+        catch (Exception ex) { Log($"Picker Error: {ex.Message}"); }
     }
 
     [RelayCommand]

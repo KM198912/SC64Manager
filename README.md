@@ -18,9 +18,10 @@ The communication engine is optimized for high-speed serial transfers at **1,000
 - **RTC Sync**: Sync the RTC of the SC64 to the current time.
 - **Set Menu Background Music**: Set the background music of the SC64 menu.
 - **Boxart and Description Scraper**: Scrapes boxart and descriptions for games from the internet, and saves them to the SD card in the correct format for the SC64 Menu.
-- **Pretty Titles**: Gui Generates a title.txt file, which is used by the SC64 Menu to display the title of the game instead of the filename. (Needs Modded sc64menu.bin) [KM198912/SC64Menu](https://github.com/KM198912/SC64Menu)
+- **Pretty Titles**: Gui Generates a titles.txt file, which is used by the SC64 Menu to display the title of the game instead of the filename. (Needs Modded sc64menu.n64) [KM198912/SC64Menu](https://github.com/KM198912/SC64Menu)
 - **SD Card Management**: Decoupled SD management from Connection Status
 - **Hardware Page**: Added a page to view the hardware information of the SC64, like Voltage, Temperature, CIC Handshake
+- **IMPORTANT NOTE**: You are NOT required to use my modded sc64menu.n64, you can use the original one, but then Advanced Features like Pretty Titles, BGM, Descriptions will not work, but the core features remain functional!
 
 
 ### 🛰️ Automated Firmware Management
@@ -67,6 +68,8 @@ dotnet run
 1.  **Connect**: Plug in your SummerCart64 via USB.
 2.  **Identify**: Select the correct COM port from the dropdown and hit **Connect**.
 3.  **Manage**:
+    - **Mount**: Click "Mount" to mount the SD card.
+    - **Unmount**: Click "Unmount" to unmount the SD card.
     - **Upload**: Select local files and click "Upload" to send them to the current SD folder.
     - **Download**: Click the download arrow (⬇) on any remote file to choose a local save path.
     - **Delete**: Check the files you want to remove and use "Delete Selected".
