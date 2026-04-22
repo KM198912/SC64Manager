@@ -162,6 +162,14 @@
                             <Switch Grid.Column="1" IsToggled="{Binding IsAutoloadEnabled}" IsEnabled="{Binding IsSdMounted}" />
                         </Grid>
 
+                        <Grid ColumnDefinitions="*, Auto">
+                            <VerticalStackLayout>
+                                <Label Text="Carousel Mode (Beta)" FontAttributes="Bold" TextColor="White"/>
+                                <Label Text="3D Perspective browser. Requires Expansion Pak." TextColor="#888" FontSize="11"/>
+                            </VerticalStackLayout>
+                            <Switch Grid.Column="1" IsToggled="{Binding IsCarouselEnabled}" IsEnabled="{Binding IsSdMounted}" />
+                        </Grid>
+
                         <Button Text="Save Settings to Cartridge" 
                                 Command="{Binding SaveCartridgeConfigCommand}"
                                 IsEnabled="{Binding IsSdMounted}"

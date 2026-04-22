@@ -208,6 +208,9 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     public partial bool IsAutoloadEnabled { get; set; }
 
+    [ObservableProperty]
+    public partial bool IsCarouselEnabled { get; set; }
+
     public ObservableCollection<string> AvailablePorts { get; } 
     public ObservableCollection<FileItem> LocalFiles { get; } 
     public ObservableCollection<FileItem> RemoteFiles { get; } 
@@ -758,6 +761,7 @@ public partial class MainViewModel : ObservableObject
             IsPal60Enabled = ini.GetBool("menu", "pal60", false);
             IsPal60CompatEnabled = ini.GetBool("menu", "pal60_compatibility_mode", true);
             IsAutoloadEnabled = ini.GetBool("menu", "autoload_rom_enabled", false);
+            IsCarouselEnabled = ini.GetBool("menu", "carousel_menu", true);
             
             Log("SUCCESS: Remote configuration loaded.");
         }
@@ -793,6 +797,7 @@ public partial class MainViewModel : ObservableObject
             ini.SetBool("menu", "pal60", IsPal60Enabled);
             ini.SetBool("menu", "pal60_compatibility_mode", IsPal60CompatEnabled);
             ini.SetBool("menu", "autoload_rom_enabled", IsAutoloadEnabled);
+            ini.SetBool("menu", "carousel_menu", IsCarouselEnabled);
 
             // 3. Write back
             await Task.Run(() => {
