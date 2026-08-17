@@ -9,7 +9,7 @@ namespace NetGui.Services;
 public class FsService
 {
     private readonly SC64Device _device;
-    private DiscFileSystem? _fatFs;
+    private DiscFileSystem? _fs;
     private SC64Stream? _stream;
     private readonly SemaphoreSlim _fsLock = new(1, 1);
 
@@ -55,14 +55,16 @@ public class FsService
             if (ExFatFileSystem.Detect(partitionStream))
             {
                 log("FS: Detected exFAT filesystem.");
-                _fatFs = new ExFatFileSystem(partitionStream);
+                partitionStream.Seek(0, SeekOrigin.Begin);
+                _fs = new ExFatFileSystem(partitionStream);
             }
             else
             {
-                _fatFs = new FatFileSystem(partitionStream);
+                partitionStream.Seek(0, SeekOrigin.Begin);
+                _fs = new FatFileSystem(partitionStream);
             }
 
-            log($"FS: Mount successful. Label: {_fatFs.FriendlyName}");
+            log($"FS: Mount successful. Label: {_fs.FriendlyName}");
             return true;
         }
         catch (Exception ex)
@@ -76,7 +78,7 @@ public class FsService
     public List<FileItem> ListDir(string path)
     {
         var items = new List<FileItem>();
-        if (_fatFs == null) return items;
+        if (_fs == null) return items;
 
         _fsLock.Wait();
         try
@@ -86,7 +88,7 @@ public class FsService
                 items.Add(new FileItem { Name = "..", IsDirectory = true, SizeDisplay = "<UP>" });
             }
 
-            foreach (var dir in _fatFs.GetDirectories(path).ToList())
+            foreach (var dir in _fs.GetDirectories(path).ToList())
             {
                 items.Add(new FileItem
                 {
@@ -96,9 +98,9 @@ public class FsService
                 });
             }
 
-            foreach (var file in _fatFs.GetFiles(path).ToList())
+            foreach (var file in _fs.GetFiles(path).ToList())
             {
-                var info = _fatFs.GetFileInfo(file);
+                var info = _fs.GetFileInfo(file);
                 items.Add(new FileItem
                 {
                     Name = Path.GetFileName(file),
@@ -119,14 +121,14 @@ public class FsService
         _fsLock.Wait();
         try
         {
-            if (_fatFs == null) throw new InvalidOperationException("Not mounted");
-            return _fatFs.OpenFile(path, mode);
+            if (_fs == null) throw new InvalidOperationException("Not mounted");
+            return _fs.OpenFile(path, mode);
         }
         finally { _fsLock.Release(); }
     }
 
     /// <summary>
-    /// Atomically writes all bytes to a remote FAT file, holding the filesystem
+    /// Atomically writes all bytes to a remote filesystem file, holding the filesystem
     /// lock for the entire open/write/close sequence to prevent corruption.
     /// </summary>
     public void WriteAllBytes(string path, byte[] data)
@@ -134,8 +136,8 @@ public class FsService
         _fsLock.Wait();
         try
         {
-            if (_fatFs == null) throw new InvalidOperationException("Not mounted");
-            using var dest = _fatFs.OpenFile(path, FileMode.Create);
+            if (_fs == null) throw new InvalidOperationException("Not mounted");
+            using var dest = _fs.OpenFile(path, FileMode.Create);
             dest.Write(data, 0, data.Length);
         }
         finally { _fsLock.Release(); }
@@ -144,13 +146,13 @@ public class FsService
     public void DeleteFile(string path)
     {
         _fsLock.Wait();
-        try { _fatFs?.DeleteFile(path); } finally { _fsLock.Release(); }
+        try { _fs?.DeleteFile(path); } finally { _fsLock.Release(); }
     }
 
     public void DeleteDirectory(string path, bool recursive = true)
     {
         _fsLock.Wait();
-        try { _fatFs?.DeleteDirectory(path, recursive); } finally { _fsLock.Release(); }
+        try { _fs?.DeleteDirectory(path, recursive); } finally { _fsLock.Release(); }
     }
 
     public void Rename(string oldPath, string newPath, bool isDirectory)
@@ -158,9 +160,9 @@ public class FsService
         _fsLock.Wait();
         try
         {
-            if (_fatFs == null) return;
-            if (isDirectory) _fatFs.MoveDirectory(oldPath, newPath);
-            else _fatFs.MoveFile(oldPath, newPath);
+            if (_fs == null) return;
+            if (isDirectory) _fs.MoveDirectory(oldPath, newPath);
+            else _fs.MoveFile(oldPath, newPath);
         }
         finally { _fsLock.Release(); }
     }
@@ -168,7 +170,7 @@ public class FsService
     public void CreateDirectory(string path)
     {
         _fsLock.Wait();
-        try { _fatFs?.CreateDirectory(path); } finally { _fsLock.Release(); }
+        try { _fs?.CreateDirectory(path); } finally { _fsLock.Release(); }
     }
 
     public void Disconnect(bool hardwareDeinit = true)
@@ -176,10 +178,10 @@ public class FsService
         _fsLock.Wait();
         try
         {
-            _fatFs?.Dispose();
+            _fs?.Dispose();
             _stream?.Dispose();
             if (hardwareDeinit) _device.SdDeinit();
-            _fatFs = null;
+            _fs = null;
             _stream = null;
         }
         finally { _fsLock.Release(); }
