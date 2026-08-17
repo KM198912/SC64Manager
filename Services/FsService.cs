@@ -114,6 +114,22 @@ public class FsService
         finally { _fsLock.Release(); }
     }
 
+    /// <summary>
+    /// Atomically writes all bytes to a remote FAT file, holding the filesystem
+    /// lock for the entire open/write/close sequence to prevent corruption.
+    /// </summary>
+    public void WriteAllBytes(string path, byte[] data)
+    {
+        _fsLock.Wait();
+        try
+        {
+            if (_fatFs == null) throw new InvalidOperationException("Not mounted");
+            using var dest = _fatFs.OpenFile(path, FileMode.Create);
+            dest.Write(data, 0, data.Length);
+        }
+        finally { _fsLock.Release(); }
+    }
+
     public void DeleteFile(string path)
     {
         _fsLock.Wait();

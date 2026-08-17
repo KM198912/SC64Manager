@@ -976,11 +976,7 @@ public partial class MainViewModel : ObservableObject
                                     EnsureDirectoryExistsRemote($"/menu/metadata/{c1}/{c2}/{c3}/{c4}");
                                 });
 
-                                await Task.Run(() => {
-                                    using var ms = new MemoryStream(pngData);
-                                    using var dest = _fs.OpenFile(remoteTarget, FileMode.Create);
-                                    ms.CopyTo(dest);
-                                });
+                                await Task.Run(() => _fs.WriteAllBytes(remoteTarget, pngData));
 
                                 var cacheDir = Path.Combine(FileSystem.CacheDirectory, "BoxArt", c1.ToString(), c2.ToString(), c3.ToString(), c4.ToString());
                                 Directory.CreateDirectory(cacheDir);
@@ -1017,9 +1013,7 @@ public partial class MainViewModel : ObservableObject
                                 await Task.Run(() => {
                                     var encoding = new System.Text.UTF8Encoding(false);
                                     byte[] descBytes = encoding.GetBytes(wrappedText);
-                                    using var ms = new MemoryStream(descBytes);
-                                    using var dest = _fs.OpenFile(remoteTargetDesc, FileMode.Create);
-                                    ms.CopyTo(dest);
+                                    _fs.WriteAllBytes(remoteTargetDesc, descBytes);
                                 });
 
                                 var cacheDir = Path.Combine(FileSystem.CacheDirectory, "BoxArt", c1.ToString(), c2.ToString(), c3.ToString(), c4.ToString());
@@ -1054,9 +1048,7 @@ public partial class MainViewModel : ObservableObject
                                         await Task.Run(() => {
                                             var encoding = new System.Text.UTF8Encoding(false);
                                             byte[] descBytes = encoding.GetBytes(wrappedText);
-                                            using var ms = new MemoryStream(descBytes);
-                                            using var dest = _fs.OpenFile(remoteTargetDesc, FileMode.Create);
-                                            ms.CopyTo(dest);
+                                            _fs.WriteAllBytes(remoteTargetDesc, descBytes);
                                         });
 
                                         var cacheDir = Path.Combine(FileSystem.CacheDirectory, "BoxArt", c1.ToString(), c2.ToString(), c3.ToString(), c4.ToString());
@@ -1079,11 +1071,7 @@ public partial class MainViewModel : ObservableObject
                                             resizedImage.Save(pngMs, ImageFormat.Png);
                                             byte[] pngData = pngMs.ToArray();
 
-                                            await Task.Run(() => {
-                                                using var ms = new MemoryStream(pngData);
-                                                using var dest = _fs.OpenFile(remoteTarget, FileMode.Create);
-                                                ms.CopyTo(dest);
-                                            });
+                                            await Task.Run(() => _fs.WriteAllBytes(remoteTarget, pngData));
 
                                             var cacheDirArt = Path.Combine(FileSystem.CacheDirectory, "BoxArt", c1.ToString(), c2.ToString(), c3.ToString(), c4.ToString());
                                             Directory.CreateDirectory(cacheDirArt);
@@ -1115,11 +1103,7 @@ public partial class MainViewModel : ObservableObject
                             var wrappedText = "\n\n" + WordWrap(rom.Description, 60).Replace("\r\n", "\n");
                             var encoding = new System.Text.UTF8Encoding(false);
                             byte[] descBytes = encoding.GetBytes(wrappedText);
-                            using (var ms = new MemoryStream(descBytes))
-                            using (var dest = _fs.OpenFile(remoteTargetDesc, FileMode.Create))
-                            {
-                                ms.CopyTo(dest);
-                            }
+                            _fs.WriteAllBytes(remoteTargetDesc, descBytes);
                             Log($"SUCCESS: Late-resolved description.txt deployed for {rom.Name}");
                         }
                     });
@@ -1215,9 +1199,7 @@ public partial class MainViewModel : ObservableObject
             await Task.Run(() => {
                 var encoding = new UTF8Encoding(false);
                 byte[] bytes = encoding.GetBytes(content);
-                using var ms = new MemoryStream(bytes);
-                using var dest = _fs.OpenFile(remotePath, FileMode.Create);
-                ms.CopyTo(dest);
+                _fs.WriteAllBytes(remotePath, bytes);
             });
             Log($"SUCCESS: titles.txt index updated for folder.");
         }
