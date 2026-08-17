@@ -1518,7 +1518,21 @@ public partial class MainViewModel : ObservableObject
         if (item.Name == "..")
         {
             var parent = Directory.GetParent(CurrentLocalPath);
-            if (parent != null) CurrentLocalPath = parent.FullName;
+            if (parent != null)
+            {
+                CurrentLocalPath = parent.FullName;
+            }
+            else
+            {
+                // At a drive root — navigate to the virtual drives list
+                CurrentLocalPath = string.Empty;
+            }
+        }
+        else if (string.IsNullOrEmpty(CurrentLocalPath))
+        {
+            // Navigating into a drive from the virtual drives list
+            if (Directory.Exists(item.Name))
+                CurrentLocalPath = item.Name;
         }
         else
         {
@@ -1903,25 +1917,35 @@ public partial class MainViewModel : ObservableObject
         try
         {
             var dir = CurrentLocalPath;
-            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+
+            // Validate directory; fall back to current directory if invalid
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
             {
                 dir = Directory.GetCurrentDirectory();
+                CurrentLocalPath = dir;
+                return; // OnCurrentLocalPathChanged will re-trigger this method with the corrected path
             }
 
-            var entries = Directory.GetFileSystemEntries(dir)
-                .OrderBy(x => Directory.Exists(x) ? 0 : 1)
-                .ThenBy(x => x)
-                .ToList();
-            
             MainThread.BeginInvokeOnMainThread(() => {
                 LocalFiles.Clear();
 
-                // Add back button if not at drive root
-                var parent = Directory.GetParent(dir);
-                if (parent != null)
+                // Show virtual drive list when path is empty (Windows drive selector)
+                if (string.IsNullOrEmpty(dir))
                 {
-                    LocalFiles.Add(new FileItem { Name = "..", IsDirectory = true, SizeDisplay = "<UP>" });
+                    foreach (var drive in DriveInfo.GetDrives().Where(d => d.IsReady))
+                    {
+                        LocalFiles.Add(new FileItem { Name = drive.RootDirectory.FullName, IsDirectory = true, SizeDisplay = "<DRIVE>" });
+                    }
+                    return;
                 }
+
+                var entries = Directory.GetFileSystemEntries(dir)
+                    .OrderBy(x => Directory.Exists(x) ? 0 : 1)
+                    .ThenBy(x => x)
+                    .ToList();
+                
+                // Always add a ".." back entry
+                LocalFiles.Add(new FileItem { Name = "..", IsDirectory = true, SizeDisplay = "<UP>" });
 
                 foreach (var f in entries)
                 {
