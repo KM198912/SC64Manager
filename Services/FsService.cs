@@ -1,4 +1,5 @@
 using DiscUtils;
+using DiscUtils.ExFat;
 using DiscUtils.Fat;
 using DiscUtils.Partitions;
 using NetGui.Models;
@@ -8,7 +9,7 @@ namespace NetGui.Services;
 public class FsService
 {
     private readonly SC64Device _device;
-    private FatFileSystem? _fatFs;
+    private DiscFileSystem? _fatFs;
     private SC64Stream? _stream;
     private readonly SemaphoreSlim _fsLock = new(1, 1);
 
@@ -39,16 +40,26 @@ public class FsService
             
             log("FS: Scanning for BIOS/MBR partitions...");
             var partitionTable = new BiosPartitionTable(_stream);
+            Stream partitionStream;
             if (partitionTable.Partitions.Count == 0)
             {
-                log("FS: No primary partitions found. Attempting direct FAT mount...");
-                _fatFs = new FatFileSystem(_stream);
+                log("FS: No primary partitions found. Attempting direct mount...");
+                partitionStream = _stream;
             }
             else
             {
                 log($"FS: Found {partitionTable.Partitions.Count} partitions. Using first partition.");
-                var partition = partitionTable.Partitions[0];
-                _fatFs = new FatFileSystem(partition.Open());
+                partitionStream = partitionTable.Partitions[0].Open();
+            }
+
+            if (ExFatFileSystem.Detect(partitionStream))
+            {
+                log("FS: Detected exFAT filesystem.");
+                _fatFs = new ExFatFileSystem(partitionStream);
+            }
+            else
+            {
+                _fatFs = new FatFileSystem(partitionStream);
             }
 
             log($"FS: Mount successful. Label: {_fatFs.FriendlyName}");
