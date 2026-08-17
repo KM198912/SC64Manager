@@ -1940,6 +1940,17 @@ public partial class MainViewModel : ObservableObject
                 }
 
                 var entries = Directory.GetFileSystemEntries(dir)
+                    .Where(x => {
+                        try
+                        {
+                            var attrs = File.GetAttributes(x);
+                            return (attrs & (FileAttributes.Hidden | FileAttributes.System)) == 0;
+                        }
+                        catch
+                        {
+                            return false;
+                        }
+                    })
                     .OrderBy(x => Directory.Exists(x) ? 0 : 1)
                     .ThenBy(x => x)
                     .ToList();
